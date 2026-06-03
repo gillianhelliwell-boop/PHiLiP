@@ -28,6 +28,12 @@ void MeshAdaptation<dim,real,MeshType>::adapt_mesh()
     pcout<<"Mesh has been adapted according to the specified error indicator. Adaptation cycle = "<<current_mesh_adaptation_cycle<<std::endl;
 }
 
+template <int dim, typename real, typename MeshType>
+void MeshAdaptation<dim,real,MeshType>::explicit_adapt_mesh()
+{
+    error = ims_unsteady_residual();
+}
+
 
 template <int dim, typename real, typename MeshType>
 void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_coarsening()
