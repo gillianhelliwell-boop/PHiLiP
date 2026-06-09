@@ -73,10 +73,36 @@ dealii::Vector<real> ResidualErrorEstimate<dim, real, MeshType> :: compute_cellw
     return cellwise_errors;
 }
 
+template <int dim, int nstate, typename real, typename MeshType>
+UnsteadyResidualErrorEstimate<dim, nstate, real, MeshType> :: UnsteadyResidualErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input)
+    : DualWeightedResidualError<dim, nstate, real, MeshType> (dg_input)
+    {}
+
+
+template <int dim, int nstate, typename real, typename MeshType>
+dealii::Vector<real> UnsteadyResidualErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
+{
+    //std::vector<dealii::types::global_dof_index> dofs_indices; //do we need to know p-order?
+    auto Q_p = this->dg->solution;
+    this->reinit();
+    this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
+
+    //compute residual at p+1
+    this->dg->assemble_residual();
+    auto unsteady_residual = this->dg->right_hand_side; //save residual
+    //real unsteady_residual_norm = unsteady_residual.l2_norm();
+
+    this->dg->solution = Q_p; //restore solution vector
+    this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh 
+
+    return unsteady_residual;
+}
+
 template <int dim, typename real, typename MeshType>
 ExplicitErrorEstimate<dim, real, MeshType> :: ExplicitErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input)
     : MeshErrorEstimateBase<dim, real, MeshType> (dg_input)
     {}
+
 
 template <int dim, typename real, typename MeshType>
 dealii::Vector<real> ExplicitErrorEstimate<dim, real, MeshType> :: compute_cellwise_errors()

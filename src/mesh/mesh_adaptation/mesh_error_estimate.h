@@ -91,6 +91,7 @@ public:
 };
 
 
+
 /// DualWeightedResidualError class
 /** 
   * This class computes the discrete adjoint of the system based on a functional of interest and
@@ -231,6 +232,33 @@ protected:
     dealii::ConditionalOStream pcout; ///< Parallel std::cout that only outputs on mpi_rank==0
 
 }; // DualWeightedResidualError class
+
+#if PHILIP_DIM==1
+template <int dim, int nstate, typename real, typename MeshType = dealii::Triangulation<dim>>
+#else
+template <int dim, int nstate, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
+#endif
+class UnsteadyResidualErrorEstimate : public DualWeightedResidualError <dim, nstate, real, MeshType>
+{
+
+public:
+
+    /// For storing the current refinement state of the solution
+    enum SolutionRefinementStateEnum{
+        coarse, ///< Initial state
+        fine,   ///< Refined state
+    };
+    
+    /// Computes unsteady residual in each cell to be used as an error estimate.
+    dealii::Vector<real> compute_cellwise_errors () override;
+
+    /// Constructor
+    UnsteadyResidualErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input);
+
+    /// Destructor
+    ~UnsteadyResidualErrorEstimate() {};
+
+};
 
 } // namespace PHiLiP
 
