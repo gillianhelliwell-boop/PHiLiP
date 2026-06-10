@@ -238,25 +238,61 @@ template <int dim, int nstate, typename real, typename MeshType = dealii::Triang
 #else
 template <int dim, int nstate, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
 #endif
-class UnsteadyResidualErrorEstimate : public DualWeightedResidualError <dim, nstate, real, MeshType>
+class LESErrorEstimate : public MeshErrorEstimateBase <dim, real, MeshType>
 {
 
 public:
-
     /// For storing the current refinement state of the solution
     enum SolutionRefinementStateEnum{
         coarse, ///< Initial state
         fine,   ///< Refined state
     };
-    
+
     /// Computes unsteady residual in each cell to be used as an error estimate.
     dealii::Vector<real> compute_cellwise_errors () override;
+    /// original solution
+    dealii::LinearAlgebra::distributed::Vector<real> solution_coarse;
+    /// Current refinement state of the solution
+    SolutionRefinementStateEnum solution_refinement_state;
+     /// Original FE_index distribution
+    dealii::Vector<real> coarse_fe_index;
+
+
+    /// Reinitializes member variables of LESErrorEstimate. 
+    /** Sets solution_refinement_state to SolutionRefinementStateEnum::coarse and stores the current
+     *  solution and polynomial order distribution
+     */
+    void reinit();
+
+    /// Converts DG solution to the specified state.
+    /** Calls the functions coarse_to_fine() or fine_to_coarse()
+     *  if the LESErrorEstimate::solution_refinement_state is different than the input \p state
+     */
+    void convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum refinement_state);
+
+    /// Projects the problem to a p-enriched space.
+    /** Raises the FE_index on each cell and transfers the coarse 
+     *  solution to a fine solution (stored in DGBase::solution)
+     */
+    void coarse_to_fine();
+
+    /// Return the problem to the original solution and polynomial distribution
+    /** Copies the values that were stored in solution_coarse and 
+     *  DualWeightedResidualError::coarse_fe_index at intilization
+     */
+    void fine_to_coarse();
 
     /// Constructor
-    UnsteadyResidualErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input);
+    /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.
+     *  Also stores the current solution and distribution of polynomial orders
+     *  for the mesh for converting back to coarse state after refinement.
+    */
+    LESErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input);
 
     /// Destructor
-    ~UnsteadyResidualErrorEstimate() {};
+    ~LESErrorEstimate() {};
+    protected:
+      dealii::ConditionalOStream pcout; ///< Parallel std::cout that only outputs on mpi_rank==0
 
 };
 

@@ -33,7 +33,7 @@ public:
     bool use_goal_oriented_mesh_adaptation;
 
     /// Flag to use explicit mesh adaptation
-    bool use_explicit_mesh_adaptation;
+    bool use_LES_mesh_adaptation;
 
     /// Tolerance to decide between h- or p-refinement
     double hp_smoothness_tolerance;

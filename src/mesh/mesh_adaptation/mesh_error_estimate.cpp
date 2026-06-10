@@ -74,15 +74,17 @@ dealii::Vector<real> ResidualErrorEstimate<dim, real, MeshType> :: compute_cellw
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-UnsteadyResidualErrorEstimate<dim, nstate, real, MeshType> :: UnsteadyResidualErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input)
-    : DualWeightedResidualError<dim, nstate, real, MeshType> (dg_input)
+LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input)
+    : MeshErrorEstimateBase<dim, real, MeshType> (dg_input)
+    // do I need to add more to the constructor like in the DualWeightedResidual constructor?!?
+    , solution_coarse(this->dg->solution)
+    , solution_refinement_state(SolutionRefinementStateEnum::coarse)
     {}
 
 
 template <int dim, int nstate, typename real, typename MeshType>
-dealii::Vector<real> UnsteadyResidualErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
+dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
-    //std::vector<dealii::types::global_dof_index> dofs_indices; //do we need to know p-order?
     auto Q_p = this->dg->solution;
     this->reinit();
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
@@ -96,6 +98,137 @@ dealii::Vector<real> UnsteadyResidualErrorEstimate<dim, nstate, real, MeshType> 
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh 
 
     return unsteady_residual;
+}
+
+template <int dim, int nstate, typename real, typename MeshType>
+void LESErrorEstimate<dim, nstate, real, MeshType>::reinit()
+{
+    // reinitilizing all variables after triangulation in the constructor
+    solution_coarse = this->dg->solution;
+    solution_refinement_state = SolutionRefinementStateEnum::coarse;
+
+    // storing the original FE degree distribution
+    coarse_fe_index.reinit(this->dg->triangulation->n_active_cells());
+    
+    // looping over the cells
+    for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
+    {
+        if(cell->is_locally_owned())
+        {
+            coarse_fe_index[cell->active_cell_index()] = cell->active_fe_index();
+        }
+    }
+}
+
+template <int dim, int nstate, typename real, typename MeshType>
+void LESErrorEstimate<dim, nstate, real, MeshType>::convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum required_refinement_state)
+{   
+    // checks if conversion is needed
+    if(solution_refinement_state == required_refinement_state)
+    {
+        return;
+    }
+    // calls corresponding function for state conversions
+    else if(solution_refinement_state == SolutionRefinementStateEnum::coarse && required_refinement_state == SolutionRefinementStateEnum::fine)
+    {
+        coarse_to_fine();
+    }
+    
+    else if(solution_refinement_state == SolutionRefinementStateEnum::fine && required_refinement_state == SolutionRefinementStateEnum::coarse)
+    {
+        fine_to_coarse();
+    }
+    else
+    {
+        pcout<<"Invalid state. Aborting.."<<std::endl;
+        std::abort();
+    }
+}
+
+template <int dim, int nstate, typename real, typename MeshType>
+void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
+{
+    if (this->dg->get_max_fe_degree() >= this->dg->max_degree) 
+    {
+        pcout<<"Polynomial degree of DG will exceed the maximum allowable after refinement. Update max_degree in dg"<<std::endl;
+        std::abort();
+    }
+    
+    [[maybe_unused]] unsigned int no_of_cells_before_changing_p = this->dg->triangulation->n_active_cells(); // used in debug mode (in assert).  
+
+    dealii::IndexSet locally_owned_dofs, locally_relevant_dofs;
+    locally_owned_dofs =  this->dg->dof_handler.locally_owned_dofs();
+    dealii::DoFTools::extract_locally_relevant_dofs(this->dg->dof_handler, locally_relevant_dofs);
+
+    solution_coarse.update_ghost_values();
+    
+    // Solution Transfer to fine grid
+    using VectorType       = typename dealii::LinearAlgebra::distributed::Vector<double>;
+    using DoFHandlerType   = typename dealii::DoFHandler<dim>;
+    using SolutionTransfer = typename MeshTypeHelper<MeshType>::template SolutionTransfer<dim,VectorType,DoFHandlerType>;
+
+    SolutionTransfer solution_transfer(this->dg->dof_handler);
+    solution_transfer.prepare_for_coarsening_and_refinement(solution_coarse);
+
+    this->dg->high_order_grid->prepare_for_coarsening_and_refinement();
+
+    for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
+    {
+        if (cell->is_locally_owned()) 
+        {
+            cell->set_future_fe_index(cell->active_fe_index()+1);
+        }
+    }
+
+    this->dg->triangulation->execute_coarsening_and_refinement();
+    this->dg->high_order_grid->execute_coarsening_and_refinement();
+
+    this->dg->allocate_system();
+    this->dg->solution.zero_out_ghosts();
+
+    if constexpr (std::is_same_v<typename dealii::SolutionTransfer<dim,VectorType,DoFHandlerType>, 
+                                 decltype(solution_transfer)>) {
+        solution_transfer.interpolate(solution_coarse, this->dg->solution);
+    } else {
+        solution_transfer.interpolate(this->dg->solution);
+    }
+    
+    this->dg->solution.update_ghost_values();
+    
+    [[maybe_unused]] unsigned int no_of_cells_after_changing_p = this->dg->triangulation->n_active_cells(); // It's used when compiled in debug mode (in assert). 
+
+    AssertDimension(no_of_cells_before_changing_p, no_of_cells_after_changing_p);
+
+    solution_refinement_state = SolutionRefinementStateEnum::fine;
+}
+
+template <int dim, int nstate, typename real, typename MeshType>
+void LESErrorEstimate<dim, nstate, real, MeshType>::fine_to_coarse()
+{
+    [[maybe_unused]] unsigned int no_of_cells_before_changing_p = this->dg->triangulation->n_active_cells(); // Used in assert (i.e remains unused in Release mode).
+    this->dg->high_order_grid->prepare_for_coarsening_and_refinement();
+
+    for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
+    {
+        if (cell->is_locally_owned()) 
+        {
+            cell->set_future_fe_index(coarse_fe_index[cell->active_cell_index()]);
+        }
+    }
+
+    this->dg->triangulation->execute_coarsening_and_refinement();
+    this->dg->high_order_grid->execute_coarsening_and_refinement();
+
+    this->dg->allocate_system();
+    this->dg->solution.zero_out_ghosts();
+
+    this->dg->solution = solution_coarse;
+    
+    [[maybe_unused]] unsigned int no_of_cells_after_changing_p = this->dg->triangulation->n_active_cells(); // Used when compiled in debug mode (in assert).
+
+    AssertDimension(no_of_cells_before_changing_p, no_of_cells_after_changing_p);
+
+    solution_refinement_state = SolutionRefinementStateEnum::coarse;
 }
 
 template <int dim, typename real, typename MeshType>

@@ -31,7 +31,7 @@ void MeshAdaptationParam::declare_parameters (dealii::ParameterHandler &prm)
                           dealii::Patterns::Bool(),
                           "Flag to use goal oriented mesh adaptation. False by default.");
 
-        prm.declare_entry("use_explicit_mesh_adaptation","false",
+        prm.declare_entry("use_LES_mesh_adaptation","false",
                           dealii::Patterns::Bool(),
                           "Flag to use goal oriented mesh adaptation. False by default.");
         
@@ -80,7 +80,7 @@ void MeshAdaptationParam::parse_parameters (dealii::ParameterHandler &prm)
         
         use_goal_oriented_mesh_adaptation = prm.get_bool("use_goal_oriented_mesh_adaptation");
 
-        use_explicit_mesh_adaptation = prm.get_bool("use_explicit_mesh_adaptation");
+        use_LES_mesh_adaptation = prm.get_bool("use_LES_mesh_adaptation");
 
         prm.enter_subsection("fixed-fraction");
         {
