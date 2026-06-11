@@ -38,7 +38,7 @@ subsection ODE solver
   set ode_output = quiet
   set ode_solver_type = runge_kutta
   set runge_kutta_method = rk4_ex
-  set output_solution_every_dt_time_intervals = 1.0E-2
+  #set output_solution_every_dt_time_intervals = 1.0E-2
 end
 
 # freestream Mach number

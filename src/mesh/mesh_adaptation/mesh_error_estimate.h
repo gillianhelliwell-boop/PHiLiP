@@ -37,6 +37,9 @@ public:
     /// Computes the vector containing errors in each cell.
     virtual dealii::Vector<real> compute_cellwise_errors () = 0;
 
+    //outputs the results
+    virtual void output_results_vtk(const unsigned int /*cycle*/) {};
+
     /// Constructor
     MeshErrorEstimateBase(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input);
 
@@ -256,6 +259,8 @@ public:
     SolutionRefinementStateEnum solution_refinement_state;
      /// Original FE_index distribution
     dealii::Vector<real> coarse_fe_index;
+    dealii::Vector<real> unsteady_residual;
+
 
 
     /// Reinitializes member variables of LESErrorEstimate. 
@@ -282,6 +287,8 @@ public:
      */
     void fine_to_coarse();
 
+    void output_results_vtk(const unsigned int cycle) override;
+
     /// Constructor
     /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.
      *  Also stores the current solution and distribution of polynomial orders
@@ -292,7 +299,8 @@ public:
     /// Destructor
     ~LESErrorEstimate() {};
     protected:
-      dealii::ConditionalOStream pcout; ///< Parallel std::cout that only outputs on mpi_rank==0
+        MPI_Comm mpi_communicator;
+        dealii::ConditionalOStream pcout; ///< Parallel std::cout that only outputs on mpi_rank==0
 
 };
 

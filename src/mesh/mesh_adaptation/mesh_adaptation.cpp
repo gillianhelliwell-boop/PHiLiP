@@ -26,6 +26,8 @@ void MeshAdaptation<dim,real,MeshType>::adapt_mesh()
     fixed_fraction_isotropic_refinement_and_coarsening();
     current_mesh_adaptation_cycle++;
     pcout<<"Mesh has been adapted according to the specified error indicator. Adaptation cycle = "<<current_mesh_adaptation_cycle<<std::endl;
+
+    //mesh_error->output_results_vtk(current_mesh_adaptation_cycle);
 }
 
 

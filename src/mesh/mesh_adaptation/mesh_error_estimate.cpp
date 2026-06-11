@@ -76,9 +76,10 @@ dealii::Vector<real> ResidualErrorEstimate<dim, real, MeshType> :: compute_cellw
 template <int dim, int nstate, typename real, typename MeshType>
 LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input)
     : MeshErrorEstimateBase<dim, real, MeshType> (dg_input)
-    // do I need to add more to the constructor like in the DualWeightedResidual constructor?!?
     , solution_coarse(this->dg->solution)
     , solution_refinement_state(SolutionRefinementStateEnum::coarse)
+    , mpi_communicator(MPI_COMM_WORLD)
+    , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
     {}
 
 
@@ -91,8 +92,34 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
     //compute residual at p+1
     this->dg->assemble_residual();
-    auto unsteady_residual = this->dg->right_hand_side; //save residual
+    //auto unsteady_residual = this->dg->right_hand_side; //save residual
     //real unsteady_residual_norm = unsteady_residual.l2_norm();
+
+    unsteady_residual.reinit(this->dg->triangulation->n_active_cells());
+
+    const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
+    std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
+
+    // compute the error indicator cell-wise by taking the dot product over the DOFs with the residual vector
+    for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
+    {
+        if(!cell->is_locally_owned())  continue;
+        
+        const unsigned int fe_index_curr_cell = cell->active_fe_index();
+        const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
+        const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
+
+        current_dofs_indices.resize(n_dofs_curr_cell);
+        cell->get_dof_indices(current_dofs_indices);
+
+        real rhs_cell = 0;
+        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
+        {
+            rhs_cell += this->dg->right_hand_side[current_dofs_indices[idof]];
+        }
+
+        unsteady_residual[cell->active_cell_index()] = std::abs(rhs_cell);
+    }
 
     this->dg->solution = Q_p; //restore solution vector
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh 
@@ -230,6 +257,95 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::fine_to_coarse()
 
     solution_refinement_state = SolutionRefinementStateEnum::coarse;
 }
+
+template <int dim, int nstate, typename real, typename MeshType>
+void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle)
+{
+    dealii::DataOut<dim, dealii::DoFHandler<dim>> data_out;
+    data_out.attach_dof_handler(this->dg->dof_handler);
+
+    const std::unique_ptr< dealii::DataPostprocessor<dim> > post_processor = Postprocess::PostprocessorFactory<dim>::create_Postprocessor(this->dg->all_parameters);
+    data_out.add_data_vector(this->dg->solution, *post_processor);
+
+    dealii::Vector<float> subdomain(this->dg->triangulation->n_active_cells());
+    for (unsigned int i = 0; i < subdomain.size(); ++i) 
+    {
+        subdomain(i) = this->dg->triangulation->locally_owned_subdomain();
+    }
+    data_out.add_data_vector(subdomain, "subdomain", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+
+    //output error estimate
+    dealii::Vector<real> error_estimate = compute_cellwise_errors();
+    data_out.add_data_vector(error_estimate, "error_estimate", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+
+    // Output the polynomial degree in each cell
+    std::vector<unsigned int> active_fe_indices;
+    this->dg->dof_handler.get_active_fe_indices(active_fe_indices);
+    dealii::Vector<double> active_fe_indices_dealiivector(active_fe_indices.begin(), active_fe_indices.end());
+    dealii::Vector<double> cell_poly_degree = active_fe_indices_dealiivector;
+
+    data_out.add_data_vector(active_fe_indices_dealiivector, "PolynomialDegree", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+
+    std::vector<std::string> residual_names;
+    for(int s=0;s<nstate;++s) 
+    {
+        std::string varname = "residual" + dealii::Utilities::int_to_string(s,1);
+        residual_names.push_back(varname);
+    }
+
+    data_out.add_data_vector(this->dg->right_hand_side, residual_names, dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_dof_data);
+
+    // set names of data to be output in the vtu file.
+    std::vector<std::string> derivative_functional_wrt_solution_names;
+    for(int s=0;s<nstate;++s) 
+    {
+        std::string varname = "derivative_functional_wrt_solution" + dealii::Utilities::int_to_string(s,1);
+        derivative_functional_wrt_solution_names.push_back(varname);
+    }
+
+        //process and finalize the data
+    const dealii::Mapping<dim> &mapping = (*(this->dg->high_order_grid->mapping_fe_field));
+    const int n_subdivisions = this->dg->get_max_fe_degree();
+    data_out.build_patches(mapping, n_subdivisions, 
+        dealii::DataOut<dim,dealii::DoFHandler<dim>>::CurvedCellRegion::curved_inner_cells);
+   
+
+    const int iproc = dealii::Utilities::MPI::this_mpi_process(mpi_communicator);
+    std::string filename_prefix = "LESErrorEstimate";
+
+    // vtu filename
+    std::string filename = this->dg->all_parameters->solution_vtk_files_directory_name 
+                        + "/" + filename_prefix + "-" 
+                        + dealii::Utilities::int_to_string(dim, 1) + "D-";
+    filename += dealii::Utilities::int_to_string(cycle, 4) + ".";
+    filename += dealii::Utilities::int_to_string(iproc, 4);
+    filename += ".vtu";
+    std::ofstream output(filename);
+    data_out.write_vtu(output);
+
+    if (iproc == 0) {
+        std::vector<std::string> filenames;
+        for (unsigned int iproc = 0; iproc < dealii::Utilities::MPI::n_mpi_processes(mpi_communicator); ++iproc) {
+            // must match vtu filename exactly
+            std::string fn = filename_prefix + "-" 
+                        + dealii::Utilities::int_to_string(dim, 1) + "D-";
+            fn += dealii::Utilities::int_to_string(cycle, 4) + ".";
+            fn += dealii::Utilities::int_to_string(iproc, 4);
+            fn += ".vtu";
+            filenames.push_back(fn);
+        }
+        // pvtu master file
+        std::string master_fn = this->dg->all_parameters->solution_vtk_files_directory_name 
+                            + "/" + filename_prefix + "-" 
+                            + dealii::Utilities::int_to_string(dim, 1) + "D-";
+        master_fn += dealii::Utilities::int_to_string(cycle, 4) + ".pvtu";
+        std::ofstream master_output(master_fn);
+        data_out.write_pvtu_record(master_output, filenames);
+    }
+    
+
+}
+
 
 template <int dim, typename real, typename MeshType>
 ExplicitErrorEstimate<dim, real, MeshType> :: ExplicitErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input)
@@ -651,6 +767,26 @@ template class ExplicitErrorEstimate<PHILIP_DIM, double, dealii::Triangulation<P
 template class ExplicitErrorEstimate<PHILIP_DIM, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 #if PHILIP_DIM != 1
 template class ExplicitErrorEstimate<PHILIP_DIM, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+#endif
+
+template class LESErrorEstimate <PHILIP_DIM, 1, double, dealii::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 2, double, dealii::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 3, double, dealii::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 4, double, dealii::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 5, double, dealii::Triangulation<PHILIP_DIM>>;
+
+template class LESErrorEstimate <PHILIP_DIM, 1, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 2, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 3, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 4, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 5, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+
+#if PHILIP_DIM!=1
+template class LESErrorEstimate <PHILIP_DIM, 1, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 2, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 3, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 4, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 5, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 #endif
 
 

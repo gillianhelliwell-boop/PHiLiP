@@ -7,7 +7,7 @@ std::unique_ptr <MeshErrorEstimateBase <dim, real, MeshType>> MeshErrorFactory<d
 {
     if (!(dg->all_parameters->mesh_adaptation_param.use_goal_oriented_mesh_adaptation) && dg->all_parameters->mesh_adaptation_param.use_LES_mesh_adaptation)
     {
-        return std::make_unique<ExplicitErrorEstimate<dim, real, MeshType>>(dg);
+        return std::make_unique<LESErrorEstimate<dim, nstate, real, MeshType>>(dg);
     }
     else if (!(dg->all_parameters->mesh_adaptation_param.use_goal_oriented_mesh_adaptation))
     {
