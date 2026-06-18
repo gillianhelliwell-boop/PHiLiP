@@ -113,12 +113,15 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         cell->get_dof_indices(current_dofs_indices);
 
         real rhs_cell = 0;
+        pcout<<"cell"<<cell->active_cell_index()<<":"<<std::endl;
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
-            rhs_cell += this->dg->right_hand_side[current_dofs_indices[idof]];
+            rhs_cell += std::abs(this->dg->right_hand_side[current_dofs_indices[idof]]);
+            pcout<<"rhs_cell="<<rhs_cell<<std::endl;
         }
 
         unsteady_residual[cell->active_cell_index()] = std::abs(rhs_cell);
+        pcout<<"total_residual="<< unsteady_residual << std::endl;
     }
 
     this->dg->solution = Q_p; //restore solution vector
