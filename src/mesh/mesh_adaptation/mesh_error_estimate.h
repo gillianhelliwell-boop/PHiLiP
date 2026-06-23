@@ -21,6 +21,13 @@
 #include "physics/physics.h"
 
 namespace PHiLiP {
+    
+template<int dim, typename real> // 
+std::vector< real > project_function(
+    const std::vector< real > &function_coeff,
+    const dealii::FESystem<dim,dim> &fe_input,
+    const dealii::FESystem<dim,dim> &fe_output,
+    const dealii::QGauss<dim> &projection_quadrature);
 
 #if PHILIP_DIM==1
 template <int dim, typename real, typename MeshType = dealii::Triangulation<dim>>
@@ -267,7 +274,7 @@ public:
     /** Sets solution_refinement_state to SolutionRefinementStateEnum::coarse and stores the current
      *  solution and polynomial order distribution
      */
-    void reinit();
+     void reinit();
 
     /// Converts DG solution to the specified state.
     /** Calls the functions coarse_to_fine() or fine_to_coarse()

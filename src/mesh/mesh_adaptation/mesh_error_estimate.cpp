@@ -86,20 +86,45 @@ LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_pt
 template <int dim, int nstate, typename real, typename MeshType>
 dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
-    auto Q_p = this->dg->solution;
-    this->reinit();
-    this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
-
+    auto Q_p = this->dg->solution; //save original solution
     //compute residual at p+1
     this->dg->assemble_residual();
-    //auto unsteady_residual = this->dg->right_hand_side; //save residual
-    //real unsteady_residual_norm = unsteady_residual.l2_norm();
 
-    unsteady_residual.reinit(this->dg->triangulation->n_active_cells());
+    //calculate Projection(R{Q_p})
+    std::vector<std::vector<real>> p_order_residual(this->dg->triangulation->n_active_cells());
+    std::vector<std::vector<real>> projected_residual(this->dg->triangulation->n_active_cells());
 
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
+    for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
+    {
+        if(!cell->is_locally_owned())  continue;
 
+        const unsigned int fe_index_curr_cell = cell->active_fe_index();
+        const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
+        const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
+        current_dofs_indices.resize(n_dofs_curr_cell);
+        cell->get_dof_indices(current_dofs_indices);
+        p_order_residual[cell->active_cell_index()].resize(n_dofs_curr_cell);   //resize vector for DOFs of current cell
+        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
+        {
+            p_order_residual[cell->active_cell_index()][idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
+        }
+
+         //gather inputs for project_function(), and then project the rhs to p+1
+        const int poly_degree = cell->active_fe_index();
+        const dealii::FESystem<dim,dim> &fe_input = this->dg->fe_collection[poly_degree];
+        const dealii::FESystem<dim,dim> &fe_output = this->dg->fe_collection[poly_degree + 1];  
+
+        const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell +1);
+        std::vector<real> p_order_residual_per_cell = p_order_residual[cell->active_cell_index()];
+        projected_residual[cell->active_cell_index()] = project_function(p_order_residual_per_cell, fe_input, fe_output, projection_quadrature); 
+    }    
+    //project mesh to p+1
+    this->reinit();
+    this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
+
+    unsteady_residual.reinit(this->dg->triangulation->n_active_cells());
     // compute the error indicator cell-wise by taking the dot product over the DOFs with the residual vector
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
@@ -114,19 +139,19 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
         real rhs_cell = 0;
         pcout<<"cell"<<cell->active_cell_index()<<":"<<std::endl;
+        pcout<<"Size of projected_residual[cell->active_cell_index()]: "<<projected_residual[cell->active_cell_index()].size()<<std::endl;
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
-            rhs_cell += std::abs(this->dg->right_hand_side[current_dofs_indices[idof]]);
+            rhs_cell += std::abs(this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof]); //subtract here
             pcout<<"rhs_cell="<<rhs_cell<<std::endl;
         }
 
         unsteady_residual[cell->active_cell_index()] = std::abs(rhs_cell);
-        pcout<<"total_residual="<< unsteady_residual << std::endl;
     }
 
     this->dg->solution = Q_p; //restore solution vector
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh 
-
+    
     return unsteady_residual;
 }
 
@@ -174,6 +199,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::convert_dgsolution_to_coarse
         std::abort();
     }
 }
+
 
 template <int dim, int nstate, typename real, typename MeshType>
 void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
@@ -752,6 +778,83 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::output_results_vtk(
     }
 }
 
+template<int dim, typename real> // To be replaced with operators->projection_operator
+std::vector< real > project_function(
+    const std::vector< real > &function_coeff,
+    const dealii::FESystem<dim,dim> &fe_input,
+    const dealii::FESystem<dim,dim> &fe_output,
+    const dealii::QGauss<dim> &projection_quadrature)
+{
+    const unsigned int nstate = fe_input.n_components();
+    const unsigned int n_vector_dofs_in = fe_input.dofs_per_cell;
+    const unsigned int n_vector_dofs_out = fe_output.dofs_per_cell;
+    const unsigned int n_dofs_in = n_vector_dofs_in / nstate;
+    const unsigned int n_dofs_out = n_vector_dofs_out / nstate;
+
+    assert(n_vector_dofs_in == function_coeff.size());
+    assert(nstate == fe_output.n_components());
+
+    const unsigned int n_quad_pts = projection_quadrature.size();
+    const std::vector<dealii::Point<dim,double>> &unit_quad_pts = projection_quadrature.get_points();
+
+    std::vector< real > function_coeff_out(n_vector_dofs_out); // output function coefficients.
+    for (unsigned istate = 0; istate < nstate; ++istate) {
+
+        std::vector< real > function_at_quad(n_quad_pts);
+
+        // Output interpolation_operator is V^T in the notes.
+        dealii::FullMatrix<double> interpolation_operator(n_dofs_out,n_quad_pts);
+
+        for (unsigned int iquad=0; iquad<n_quad_pts; ++iquad) {
+            function_at_quad[iquad] = 0.0;
+            for (unsigned int idof=0; idof<n_dofs_in; ++idof) {
+                const unsigned int idof_vector = fe_input.component_to_system_index(istate,idof);
+                function_at_quad[iquad] += function_coeff[idof_vector] * fe_input.shape_value_component(idof_vector,unit_quad_pts[iquad],istate);
+            }
+            function_at_quad[iquad] *= projection_quadrature.weight(iquad);
+
+            for (unsigned int idof=0; idof<n_dofs_out; ++idof) {
+                const unsigned int idof_vector = fe_output.component_to_system_index(istate,idof);
+                interpolation_operator[idof][iquad] = fe_output.shape_value_component(idof_vector,unit_quad_pts[iquad],istate);
+            }
+        }
+
+        std::vector< real > rhs(n_dofs_out);
+        for (unsigned int idof=0; idof<n_dofs_out; ++idof) {
+            rhs[idof] = 0.0;
+            for (unsigned int iquad=0; iquad<n_quad_pts; ++iquad) {
+                rhs[idof] += interpolation_operator[idof][iquad] * function_at_quad[iquad];
+            }
+        }
+
+        dealii::FullMatrix<double> mass(n_dofs_out, n_dofs_out);
+        for(unsigned int row=0; row<n_dofs_out; ++row) {
+            for(unsigned int col=0; col<n_dofs_out; ++col) {
+                mass[row][col] = 0;
+            }
+        }
+        for(unsigned int row=0; row<n_dofs_out; ++row) {
+            for(unsigned int col=0; col<n_dofs_out; ++col) {
+                for(unsigned int iquad=0; iquad<n_quad_pts; ++iquad) {
+                    mass[row][col] += interpolation_operator[row][iquad] * interpolation_operator[col][iquad] * projection_quadrature.weight(iquad);
+                }
+            }
+        }
+        dealii::FullMatrix<double> inverse_mass(n_dofs_out, n_dofs_out);
+        inverse_mass.invert(mass);
+
+        for(unsigned int row=0; row<n_dofs_out; ++row) {
+            const unsigned int idof_vector = fe_output.component_to_system_index(istate,row);
+            function_coeff_out[idof_vector] = 0.0;
+            for(unsigned int col=0; col<n_dofs_out; ++col) {
+                function_coeff_out[idof_vector] += inverse_mass[row][col] * rhs[col];
+            }
+        }
+    }
+
+    return function_coeff_out;
+
+}
 template class MeshErrorEstimateBase<PHILIP_DIM, double, dealii::Triangulation<PHILIP_DIM>>;
 template class MeshErrorEstimateBase<PHILIP_DIM, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 #if PHILIP_DIM != 1
