@@ -89,6 +89,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     auto Q_p = this->dg->solution; //save original solution
     //compute residual at p+1
     this->dg->assemble_residual();
+    pcout<<"Residual is assembled..."<<std::endl;
 
     //calculate Projection(R{Q_p})
     std::vector<std::vector<real>> p_order_residual(this->dg->triangulation->n_active_cells());
@@ -96,33 +97,46 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
+    pcout<<"About to go through cell loop..."<<std::endl;
+
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if(!cell->is_locally_owned())  continue;
-
+        pcout<<"clue 1"<<std::endl;
         const unsigned int fe_index_curr_cell = cell->active_fe_index();
         const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
         const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
         current_dofs_indices.resize(n_dofs_curr_cell);
         cell->get_dof_indices(current_dofs_indices);
+        pcout<<"clue 2"<<std::endl;
         p_order_residual[cell->active_cell_index()].resize(n_dofs_curr_cell);   //resize vector for DOFs of current cell
-        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
-        {
-            p_order_residual[cell->active_cell_index()][idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
-        }
-
          //gather inputs for project_function(), and then project the rhs to p+1
         const int poly_degree = cell->active_fe_index();
+        pcout<<"clue 3"<<std::endl;
         const dealii::FESystem<dim,dim> &fe_input = this->dg->fe_collection[poly_degree];
+        pcout<<"clue 3.5"<<std::endl;
         const dealii::FESystem<dim,dim> &fe_output = this->dg->fe_collection[poly_degree + 1];  
+        pcout<<"clue 4"<<std::endl;
+        const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell +2);
+        pcout<<"clue 5"<<std::endl;
 
-        const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell +1);
         std::vector<real> p_order_residual_per_cell = p_order_residual[cell->active_cell_index()];
+        pcout<<"About to call project_function..."<<std::endl;
+
         projected_residual[cell->active_cell_index()] = project_function(p_order_residual_per_cell, fe_input, fe_output, projection_quadrature); 
+        pcout<<"called project_function..."<<std::endl;
+
+        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
+        {
+            if(cell->active_cell_index() == 0){
+                pcout<<"p+1_order_residual_per_cell =  "<<projected_residual[cell->active_cell_index()][idof]<<std::endl;
+                }
+            }
     }    
     //project mesh to p+1
     this->reinit();
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
+    this->dg->assemble_residual(); //assemble residual of projected mesh
 
     unsteady_residual.reinit(this->dg->triangulation->n_active_cells());
     // compute the error indicator cell-wise by taking the dot product over the DOFs with the residual vector
@@ -138,19 +152,34 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         cell->get_dof_indices(current_dofs_indices);
 
         real rhs_cell = 0;
-        pcout<<"cell"<<cell->active_cell_index()<<":"<<std::endl;
-        pcout<<"Size of projected_residual[cell->active_cell_index()]: "<<projected_residual[cell->active_cell_index()].size()<<std::endl;
+        real rhs_cell_sum = 0;
+        //pcout<<"cell"<<cell->active_cell_index()<<":"<<std::endl;
+        //pcout<<"Size of projected_residual[cell->active_cell_index()]: "<<projected_residual[cell->active_cell_index()].size()<<std::endl;
+        //pcout<<"Number of DOFs in current cell: "<<n_dofs_curr_cell<<std::endl;
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
-            rhs_cell += std::abs(this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof]); //subtract here
-            pcout<<"rhs_cell="<<rhs_cell<<std::endl;
-        }
+            //pcout<<"Solution for this DOF: "<<this->dg->solution[idof]<<std::endl;
+            rhs_cell = std::abs((this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof])); //subtract here
+            if (this->dg->solution[idof] > 1.0) {
+                rhs_cell = rhs_cell/(this->dg->solution[idof]);
+            }
+            if(cell->active_cell_index() == 0){
+                pcout<<"Solution for this DOF (AFTER Refinement): "<<this->dg->solution[idof]<<std::endl;
+                pcout<<"Projected residual for this DOF(AFTER): " <<projected_residual[cell->active_cell_index()][idof]<<std::endl;
+            }
 
-        unsteady_residual[cell->active_cell_index()] = std::abs(rhs_cell);
+            rhs_cell_sum += rhs_cell;
+        }  
+        //pcout<<"rhs_cell_sum="<<rhs_cell_sum<<std::endl;
+        unsteady_residual[cell->active_cell_index()] = std::abs(rhs_cell_sum/(nstate*n_dofs_curr_cell));
     }
 
     this->dg->solution = Q_p; //restore solution vector
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh 
+
+    //adapt the p-order
+    std::vector<dealii::types::global_dof_index> dofs_indices;
+    dealii::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
     
     return unsteady_residual;
 }
@@ -783,7 +812,10 @@ std::vector< real > project_function(
     const std::vector< real > &function_coeff,
     const dealii::FESystem<dim,dim> &fe_input,
     const dealii::FESystem<dim,dim> &fe_output,
-    const dealii::QGauss<dim> &projection_quadrature)
+    const dealii::QGauss<dim> &projection_quadrature
+    //,mpi_communicator(MPI_COMM_WORLD),
+    //pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
+    )
 {
     const unsigned int nstate = fe_input.n_components();
     const unsigned int n_vector_dofs_in = fe_input.dofs_per_cell;
@@ -826,6 +858,7 @@ std::vector< real > project_function(
                 rhs[idof] += interpolation_operator[idof][iquad] * function_at_quad[iquad];
             }
         }
+        
 
         dealii::FullMatrix<double> mass(n_dofs_out, n_dofs_out);
         for(unsigned int row=0; row<n_dofs_out; ++row) {
@@ -837,20 +870,25 @@ std::vector< real > project_function(
             for(unsigned int col=0; col<n_dofs_out; ++col) {
                 for(unsigned int iquad=0; iquad<n_quad_pts; ++iquad) {
                     mass[row][col] += interpolation_operator[row][iquad] * interpolation_operator[col][iquad] * projection_quadrature.weight(iquad);
+                    //std::cout<<"mass matrix: "<<mass[row][col]<<std::endl; //PRINT STATEMENT TO BE REMOVED code is fine here
                 }
             }
         }
+    
+
         dealii::FullMatrix<double> inverse_mass(n_dofs_out, n_dofs_out);
         inverse_mass.invert(mass);
 
-        for(unsigned int row=0; row<n_dofs_out; ++row) {
-            const unsigned int idof_vector = fe_output.component_to_system_index(istate,row);
-            function_coeff_out[idof_vector] = 0.0;
-            for(unsigned int col=0; col<n_dofs_out; ++col) {
-                function_coeff_out[idof_vector] += inverse_mass[row][col] * rhs[col];
+                for(unsigned int row=0; row<n_dofs_out; ++row) {
+                    const unsigned int idof_vector = fe_output.component_to_system_index(istate,row);
+                    function_coeff_out[idof_vector] = 0.0;
+                    for(unsigned int col=0; col<n_dofs_out; ++col) {
+                        function_coeff_out[idof_vector] += inverse_mass[row][col] * rhs[col];
+                        //std::cout<<"function_coeff_out: "<<function_coeff_out[idof_vector]<<std::endl; //PRINT STATEMENT TO BE REMOVED; these numbers are blown up
+
+                    }
+                }
             }
-        }
-    }
 
     return function_coeff_out;
 

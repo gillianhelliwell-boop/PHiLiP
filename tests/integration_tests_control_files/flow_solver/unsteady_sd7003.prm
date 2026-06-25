@@ -26,6 +26,17 @@ set pde_type = navier_stokes
 set two_point_num_flux_type = Ra
 set conv_num_flux = two_point_flux_with_l2roe_dissipation
 set diss_num_flux = symm_internal_penalty
+
+subsection mesh adaptation
+  set total_mesh_adaptation_cycles = 1
+  set use_goal_oriented_mesh_adaptation = false
+  set use_LES_mesh_adaptation = true
+  set mesh_adaptation_type = p_adaptation
+  subsection fixed-fraction
+    set refine_fraction = 0.5
+    set h_coarsen_fraction = 0.0
+  end
+end
  
 # additional parameters
 # set solution_vtk_files_directory_name = solution_files
@@ -85,6 +96,7 @@ subsection flow_solver
   set flow_case_type = turbulent_airfoil_3D
   set steady_state = false
   set poly_degree = 3
+  set max_poly_degree_for_adaptation = 4
   set final_time = 30.0
   set constant_time_step = 4.4E-5
   set adaptive_time_step = false
@@ -103,7 +115,7 @@ subsection flow_solver
   end
   subsection grid
     set use_gmsh_mesh = true
-    set input_mesh_filename = /home/nyaki/Codes_2/PHiLiP/tests/meshes/SD7003_3rd_Order_4_Cell_Span
+    set input_mesh_filename = /home/tyson/Codes/gillianphilip/PHiLiP/tests/meshes/SD7003_3rd_Order_4_Cell_Span
     subsection gmsh_boundary_IDs
       set use_periodic_BC_in_x = false
       set use_periodic_BC_in_y = false
@@ -116,4 +128,5 @@ subsection flow_solver
       set z_periodic_id_face_2 = 2006
     end
   end
+
 end
