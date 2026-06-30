@@ -115,17 +115,17 @@ subsection flow_solver
   end
   subsection grid
     set use_gmsh_mesh = true
-    set input_mesh_filename = /home/tyson/Codes/gillianphilip/PHiLiP/tests/meshes/SD7003_3rd_Order_4_Cell_Span
+    set input_mesh_filename = ~/Downloads/SD7003_3rd_Order_Improved_BL_2D.msh
     subsection gmsh_boundary_IDs
       set use_periodic_BC_in_x = false
       set use_periodic_BC_in_y = false
-      set use_periodic_BC_in_z = true
+      # set use_periodic_BC_in_z = true
       # set x_periodic_id_face_1 = 2001
       # set x_periodic_id_face_2 = 2002
       # set y_periodic_id_face_1 = 2003
       # set y_periodic_id_face_2 = 2004
-      set z_periodic_id_face_1 = 2005
-      set z_periodic_id_face_2 = 2006
+      # set z_periodic_id_face_1 = 2005
+      # set z_periodic_id_face_2 = 2006
     end
   end
 
