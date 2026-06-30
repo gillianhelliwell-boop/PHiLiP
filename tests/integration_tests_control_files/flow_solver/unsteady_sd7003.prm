@@ -2,7 +2,7 @@
 # ---------------------
  
 # Solver dim and run type
-set dimension = 3
+set dimension = 2
 set run_type = flow_simulation
  
 # DG related parameters
@@ -93,7 +93,7 @@ subsection physics_model
 end
 
 subsection flow_solver
-  set flow_case_type = turbulent_airfoil_3D
+  set flow_case_type = turbulent_airfoil_2D
   set steady_state = false
   set poly_degree = 3
   set max_poly_degree_for_adaptation = 4
