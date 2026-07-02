@@ -136,10 +136,13 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     //project mesh to p+1
     this->reinit();
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
+    pcout<<"Projected mesh to p+1..."<<std::endl;
     this->dg->assemble_residual(); //assemble residual of projected mesh
+    pcout<<"Assembled residual of projected mesh..."<<std::endl;
 
     unsteady_residual.reinit(this->dg->triangulation->n_active_cells());
     // compute the error indicator cell-wise by taking the dot product over the DOFs with the residual vector
+    pcout<<"About to go through cell loop for error indicator..."<<std::endl;
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if(!cell->is_locally_owned())  continue;
@@ -173,14 +176,14 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         //pcout<<"rhs_cell_sum="<<rhs_cell_sum<<std::endl;
         unsteady_residual[cell->active_cell_index()] = std::abs(rhs_cell_sum/(nstate*n_dofs_curr_cell));
     }
-
+    pcout<<"end of error estimation cell loop..."<<std::endl;
     this->dg->solution = Q_p; //restore solution vector
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh 
 
     //adapt the p-order
     std::vector<dealii::types::global_dof_index> dofs_indices;
     dealii::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
-    
+    pcout<<"end of error estimation..."<<std::endl;
     return unsteady_residual;
 }
 
@@ -269,6 +272,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
     this->dg->high_order_grid->execute_coarsening_and_refinement();
 
     this->dg->allocate_system();
+    pcout<<"Allocated system for p+1"<<std::endl;
     this->dg->solution.zero_out_ghosts();
 
     if constexpr (std::is_same_v<typename dealii::SolutionTransfer<dim,VectorType,DoFHandlerType>, 
