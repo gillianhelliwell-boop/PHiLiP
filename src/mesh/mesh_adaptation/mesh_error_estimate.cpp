@@ -186,9 +186,9 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     }
     pcout<<"end of error estimation cell loop..."<<std::endl;
     
-    this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh 
+    //this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh TURNED OFF FOR TROUBLESHOOTING
     pcout<<"Restored mesh to coarse..."<<std::endl;
-    this->dg->solution = Q_p; //restore solution vector
+    //this->dg->solution = Q_p; //restore solution vector TURNED OFF FOR TROUBLESHOOTING
     pcout<<"Restored solution vector..."<<std::endl;
     //adapt the p-order
     //std::vector<dealii::types::global_dof_index> dofs_indices;
