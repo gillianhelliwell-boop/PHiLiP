@@ -84,7 +84,7 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
         dealii::hp::Refinement::p_adaptivity_from_absolute_threshold(dg->dof_handler,
                                                           cellwise_errors,
                                                           mesh_adaptation_param->refine_threshold_p,
-                                                          0);
+                                                          0.0);
         
         // If a cell is flagged for both h and p adaptation, perform only p adaptation.
         dealii::hp::Refinement::force_p_over_h(dg->dof_handler);
