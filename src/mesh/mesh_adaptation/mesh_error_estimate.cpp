@@ -112,7 +112,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         p_order_residual[cell->active_cell_index()].resize(n_dofs_curr_cell);   //resize vector for DOFs of current cell
          //gather inputs for project_function(), and then project the rhs to p+1
         const int poly_degree = cell->active_fe_index();
-        pcout<<"poly_degree: "<<poly_degree<<std::endl;
+        pcout << "poly_degree: " << static_cast<unsigned int>(poly_degree) << std::endl;
         if (cell->active_fe_index() + 1 >= (int)this->dg->fe_collection.size()) {
            pcout << "ERROR: cell " << cell->active_cell_index()
                  << " has fe_index " << cell->active_fe_index()
@@ -120,7 +120,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
                  << " entries!" << std::endl;
         }
 
-        pcout<<"clue 3"<<std::endl;
+        pcout<<"clue 3 and poly_degree: "<<poly_degree<<std::endl;
         const dealii::FESystem<dim,dim> &fe_input = this->dg->fe_collection[poly_degree];
         pcout<<"clue 3.5"<<std::endl;
         const dealii::FESystem<dim,dim> &fe_output = this->dg->fe_collection[poly_degree + 1];  
