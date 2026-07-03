@@ -51,6 +51,18 @@ void MeshAdaptationParam::declare_parameters (dealii::ParameterHandler &prm)
         }
         prm.leave_subsection();// "fixed-fraction"
 
+        prm.enter_subsection("threshold");
+        {
+            prm.declare_entry("refine_threshold_p","0.0",
+                              dealii::Patterns::Double(0.0,1.0),
+                              "Threshold cells to be p-refined.");
+
+            prm.declare_entry("coarsen_threshold_p","0.0",
+                              dealii::Patterns::Double(0.0,1.0),
+                              "Threshold cells to be p-coarsened.");
+        }
+        prm.leave_subsection();// "fixed-fraction"
+
         prm.enter_subsection("anisotropic");
         { 
             prm.declare_entry("mesh_complexity_anisotropic_adaptation","50.0",
@@ -89,6 +101,13 @@ void MeshAdaptationParam::parse_parameters (dealii::ParameterHandler &prm)
             hp_smoothness_tolerance = prm.get_double("hp_smoothness_tolerance");
         }
         prm.leave_subsection();// "fixed-fraction"
+
+        prm.enter_subsection("threshold");
+        {
+            refine_threshold_p = prm.get_double("refine_threshold_p");
+            coarsen_threshold_p = prm.get_double("coarsen_threshold_p");
+        }
+        prm.leave_subsection();// "threshold"
         
         prm.enter_subsection("anisotropic");
         {

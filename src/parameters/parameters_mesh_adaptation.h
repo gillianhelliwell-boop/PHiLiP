@@ -28,7 +28,13 @@ public:
 
     /// Fraction of cells to be h-coarsened
     double h_coarsen_fraction;
-    
+
+    /// Threshold for cells to be p-refined
+    double refine_threshold_p;
+
+    /// Threshold for cells to be p-coarsened
+    double coarsen_threshold_p;
+
     /// Flag to use goal oriented mesh adaptation
     bool use_goal_oriented_mesh_adaptation;
 

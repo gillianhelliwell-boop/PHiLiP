@@ -30,6 +30,8 @@ subsection mesh adaptation
     subsection fixed-fraction
       set refine_fraction = 0.5
       set h_coarsen_fraction = 0.0
+      set refine_threshold_p = 0.001296
+      set coarsen_threshold_p = 0.001
     end
 end
 

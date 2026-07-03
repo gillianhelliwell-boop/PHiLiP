@@ -37,10 +37,26 @@ void MeshAdaptation<dim,real,MeshType>::adapt_mesh()
 template <int dim, typename real, typename MeshType>
 void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_coarsening()
 {
+    //=========================================================================================================================================================
+    using MeshAdaptationTypeEnum = Parameters::MeshAdaptationParam::MeshAdaptationType;
+    MeshAdaptationTypeEnum mesh_adaptation_type = mesh_adaptation_param->mesh_adaptation_type;
+
     dealii::LinearAlgebra::distributed::Vector<real> old_solution(dg->solution);
     dealii::parallel::distributed::SolutionTransfer<dim, dealii::LinearAlgebra::distributed::Vector<real>, dealii::DoFHandler<dim>> solution_transfer(dg->dof_handler);
     solution_transfer.prepare_for_coarsening_and_refinement(old_solution);
     dg->high_order_grid->prepare_for_coarsening_and_refinement();
+    // ----------------------------------------
+    // Clear any previous flags (important)
+    // ----------------------------------------
+    for (const auto &cell : dg->dof_handler.active_cell_iterators())
+    {
+        if (cell->is_locally_owned())
+        {
+            cell->clear_refine_flag();
+            cell->clear_coarsen_flag();
+        }
+    }
+
 
     if constexpr(dim == 1 || !std::is_same<MeshType, dealii::parallel::distributed::Triangulation<dim>>::value) 
     {
@@ -57,23 +73,6 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
                                                                                         mesh_adaptation_param->h_coarsen_fraction);
     }
 
-//=========================================================================================================================================================
-    using MeshAdaptationTypeEnum = Parameters::MeshAdaptationParam::MeshAdaptationType;
-    MeshAdaptationTypeEnum mesh_adaptation_type = mesh_adaptation_param->mesh_adaptation_type;
-
-
-    // ----------------------------------------
-    // Clear any previous flags (important)
-    // ----------------------------------------
-    for (const auto &cell : dg->dof_handler.active_cell_iterators())
-    {
-        if (cell->is_locally_owned())
-        {
-            cell->clear_refine_flag();
-            cell->clear_coarsen_flag();
-        }
-    }
-
     // ----------------------------------------
     // Mark the cells you want
     // ----------------------------------------
@@ -82,10 +81,10 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
     if(mesh_adaptation_type == MeshAdaptationTypeEnum::h_adaptation){
         // Do nothing, cells are already flagged for h-adaptation
     } else if(mesh_adaptation_type == MeshAdaptationTypeEnum::p_adaptation){
-        dealii::hp::Refinement::p_adaptivity_fixed_number(dg->dof_handler,
+        dealii::hp::Refinement::p_adaptivity_from_absolute_threshold(dg->dof_handler,
                                                           cellwise_errors,
-                                                          1.0,
-                                                          0.0);
+                                                          mesh_adaptation_param->refine_threshold_p,
+                                                          0);
         
         // If a cell is flagged for both h and p adaptation, perform only p adaptation.
         dealii::hp::Refinement::force_p_over_h(dg->dof_handler);
