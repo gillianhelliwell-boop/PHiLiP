@@ -112,6 +112,14 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         p_order_residual[cell->active_cell_index()].resize(n_dofs_curr_cell);   //resize vector for DOFs of current cell
          //gather inputs for project_function(), and then project the rhs to p+1
         const int poly_degree = cell->active_fe_index();
+        pcout<<"poly_degree: "<<poly_degree<<std::endl;
+        if (cell->active_fe_index() + 1 >= (int)this->dg->fe_collection.size()) {
+           pcout << "ERROR: cell " << cell->active_cell_index()
+                 << " has fe_index " << cell->active_fe_index()
+                 << " but fe_collection only has " << this->dg->fe_collection.size()
+                 << " entries!" << std::endl;
+        }
+
         pcout<<"clue 3"<<std::endl;
         const dealii::FESystem<dim,dim> &fe_input = this->dg->fe_collection[poly_degree];
         pcout<<"clue 3.5"<<std::endl;
@@ -134,7 +142,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
             }
     }    
     //project mesh to p+1
-    this->reinit();
+    this->reinit(); //do we need this?? maybe for residual vector. remove
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
     pcout<<"Projected mesh to p+1..."<<std::endl;
     this->dg->assemble_residual(); //assemble residual of projected mesh
@@ -247,7 +255,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
     dealii::IndexSet locally_owned_dofs, locally_relevant_dofs;
     locally_owned_dofs =  this->dg->dof_handler.locally_owned_dofs();
     dealii::DoFTools::extract_locally_relevant_dofs(this->dg->dof_handler, locally_relevant_dofs);
-
+    pcout<<"locally_owned_dofs.size()="<<locally_owned_dofs.size()<<std::endl;
     solution_coarse.update_ghost_values();
     
     // Solution Transfer to fine grid
@@ -259,7 +267,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
     solution_transfer.prepare_for_coarsening_and_refinement(solution_coarse);
 
     this->dg->high_order_grid->prepare_for_coarsening_and_refinement();
-
+    pcout<<"Prepared for coarsening and refinement..."<<std::endl;
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if (cell->is_locally_owned()) 

@@ -2157,6 +2157,7 @@ void DGBase<dim,real,MeshType>::allocate_system (
     // system matrices and vectors.
 
     dof_handler.distribute_dofs(fe_collection);
+    pcout<< "   Number of degrees of freedom: " << dof_handler.n_dofs() << std::endl;
     //This Cuthill_McKee renumbering for dof_handlr uses a lot of memory in 3D, is there another way?
     using RenumberDofsType = Parameters::AllParameters::RenumberDofsType;
     if(all_parameters->do_renumber_dofs && all_parameters->renumber_dofs_type == RenumberDofsType::CuthillMckee ){
