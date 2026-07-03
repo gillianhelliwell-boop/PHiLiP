@@ -185,12 +185,14 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         unsteady_residual[cell->active_cell_index()] = std::abs(rhs_cell_sum/(nstate*n_dofs_curr_cell));
     }
     pcout<<"end of error estimation cell loop..."<<std::endl;
-    this->dg->solution = Q_p; //restore solution vector
+    
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh 
-
+    pcout<<"Restored mesh to coarse..."<<std::endl;
+    this->dg->solution = Q_p; //restore solution vector
+    pcout<<"Restored solution vector..."<<std::endl;
     //adapt the p-order
-    std::vector<dealii::types::global_dof_index> dofs_indices;
-    dealii::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
+    //std::vector<dealii::types::global_dof_index> dofs_indices;
+    //dealii::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
     pcout<<"end of error estimation..."<<std::endl;
     return unsteady_residual;
 }
