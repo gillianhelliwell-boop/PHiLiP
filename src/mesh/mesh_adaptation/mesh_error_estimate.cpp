@@ -113,7 +113,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
          //gather inputs for project_function(), and then project the rhs to p+1
         const int poly_degree = cell->active_fe_index();
         pcout << "poly_degree: " << static_cast<unsigned int>(poly_degree) << std::endl;
-        if (cell->active_fe_index() + 1 >= (int)this->dg->fe_collection.size()) {
+        if (static_cast<unsigned int>(cell->active_fe_index() + 1) >= this->dg->fe_collection.size()) {
            pcout << "ERROR: cell " << cell->active_cell_index()
                  << " has fe_index " << cell->active_fe_index()
                  << " but fe_collection only has " << this->dg->fe_collection.size()
