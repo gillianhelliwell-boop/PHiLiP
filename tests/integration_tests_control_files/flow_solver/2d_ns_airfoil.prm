@@ -26,6 +26,21 @@ set pde_type = navier_stokes
 set two_point_num_flux_type = Ra
 set conv_num_flux = two_point_flux_with_l2roe_dissipation
 set diss_num_flux = symm_internal_penalty
+
+subsection mesh adaptation
+  set total_mesh_adaptation_cycles = 1
+  set use_goal_oriented_mesh_adaptation = false
+  set use_LES_mesh_adaptation = true
+  set mesh_adaptation_type = p_adaptation
+  subsection fixed-fraction
+    set refine_fraction = 0.5
+    set h_coarsen_fraction = 0.0
+  end
+  subsection threshold
+    set refine_threshold_p = 0.001296
+    set coarsen_threshold_p = 0.001
+  end
+end
  
 # additional parameters
 # set solution_vtk_files_directory_name = solution_files
@@ -80,7 +95,8 @@ end
 # Flow Solver
 subsection flow_solver
   set flow_case_type = naca0012
-  set poly_degree = 3
+  set poly_degree = 2
+  set max_poly_degree_for_adaptation = 20
   set final_time = 32.001
   set courant_friedrichs_lewy_number = 0.01
   set unsteady_data_table_filename = Unsteady_SD7003_P7_CPlus
@@ -102,13 +118,13 @@ subsection flow_solver
    set input_mesh_filename = /lustre10/scratch/gillianh/SD7003_3rd_Order_Improved_BL_2D
       set use_periodic_BC_in_x = false
       set use_periodic_BC_in_y = false
-      set use_periodic_BC_in_z = true
+      set use_periodic_BC_in_z = false
       # set x_periodic_id_face_1 = 2001
       # set x_periodic_id_face_2 = 2002
       # set y_periodic_id_face_1 = 2003
       # set y_periodic_id_face_2 = 2004
-      set z_periodic_id_face_1 = 2005
-      set z_periodic_id_face_2 = 2006
+      # set z_periodic_id_face_1 = 2005
+      # set z_periodic_id_face_2 = 2006
     end 
   end
   # set apply_initial_condition_method = project_initial_condition_function
