@@ -45,7 +45,7 @@ public:
     virtual dealii::Vector<real> compute_cellwise_errors () = 0;
 
     //outputs the results
-    virtual void output_results_vtk(const unsigned int /*cycle*/) {};
+    virtual void output_results_vtk(const unsigned int /*cycle*/, const dealii::Vector<real> &/*cellwise_errors*/) {};
 
     /// Constructor
     MeshErrorEstimateBase(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input);
@@ -209,8 +209,11 @@ public:
      *  related to the current adjoint state. Will also output DualWeightedResidualError::dual_weighted_residual_fine
      *  if currenly on the fine grid.
      */
+    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override {
+        MeshErrorEstimateBase<dim, real, MeshType>::output_results_vtk(cycle, cellwise_errors);
+    }
     void output_results_vtk(const unsigned int cycle);
-    
+
     /// Solves the adjoint equation.
     dealii::LinearAlgebra::distributed::Vector<real> compute_adjoint(dealii::LinearAlgebra::distributed::Vector<real> &derivative_functional_wrt_solution, 
                                                                      dealii::LinearAlgebra::distributed::Vector<real> &adjoint_variable);
@@ -294,7 +297,7 @@ public:
      */
     void fine_to_coarse();
 
-    void output_results_vtk(const unsigned int cycle, dealii::Vector<real> &cellwise_errors) override;
+    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override;
 
     /// Constructor
     /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.

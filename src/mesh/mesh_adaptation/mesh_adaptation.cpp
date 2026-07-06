@@ -20,8 +20,9 @@ void MeshAdaptation<dim,real,MeshType>::adapt_mesh()
     [[maybe_unused]] unsigned int expected_size_of_cellwise_errors = dg->triangulation->n_active_cells();
     pcout<<"About to call compute_cellwise_errors..."<<std::endl;
     //save cellwise_errors as a member of MeshAdaptation
-    cellwise_errors = get_cellwise_errors();
-    //cellwise_errors = mesh_error->compute_cellwise_errors();
+    //update_cellwise_errors();
+    //cellwise_errors = get_cellwise_errors();
+    cellwise_errors = mesh_error->compute_cellwise_errors();
     pcout<<"Called compute_cellwise_errors..."<<std::endl;
 
     [[maybe_unused]] unsigned int actual_size_of_cellwise_errors = cellwise_errors.size();
@@ -47,10 +48,11 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
     dealii::parallel::distributed::SolutionTransfer<dim, dealii::LinearAlgebra::distributed::Vector<real>, dealii::DoFHandler<dim>> solution_transfer(dg->dof_handler);
     solution_transfer.prepare_for_coarsening_and_refinement(old_solution);
     dg->high_order_grid->prepare_for_coarsening_and_refinement();
+    pcout<<"clue 3.1"<<std::endl;
     // ----------------------------------------
     // Clear any previous flags (important)
     // ----------------------------------------
-    for (const auto &cell : dg->dof_handler.active_cell_iterators())
+    /*for (const auto &cell : dg->dof_handler.active_cell_iterators())
     {
         if (cell->is_locally_owned())
         {
@@ -58,7 +60,7 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
             cell->clear_coarsen_flag();
         }
     }
-
+*/
 
     if constexpr(dim == 1 || !std::is_same<MeshType, dealii::parallel::distributed::Triangulation<dim>>::value) 
     {
@@ -73,12 +75,12 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
                                                                                         cellwise_errors,
                                                                                         mesh_adaptation_param->refine_fraction,
                                                                                         mesh_adaptation_param->h_coarsen_fraction);
-    }
-
+    } 
+    pcout<<"clue 3.2"<<std::endl;
     // ----------------------------------------
     // Mark the cells you want
     // ----------------------------------------
-    mark_airfoil_layers(dg->dof_handler);
+    //mark_airfoil_layers(dg->dof_handler);
 
     if(mesh_adaptation_type == MeshAdaptationTypeEnum::h_adaptation){
         // Do nothing, cells are already flagged for h-adaptation
@@ -87,22 +89,25 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
                                                           cellwise_errors,
                                                           mesh_adaptation_param->refine_threshold_p,
                                                           0.0);
-        
+        pcout<<"clue 3.3"<<std::endl;
         // If a cell is flagged for both h and p adaptation, perform only p adaptation.
         dealii::hp::Refinement::force_p_over_h(dg->dof_handler);
     } else if(mesh_adaptation_type == MeshAdaptationTypeEnum::hp_adaptation){
         smoothness_sensor_based_hp_refinement();
     }
 //=========================================================================================================================================================
-
+    pcout<<"clue 3.4"<<std::endl;
     dg->high_order_grid->triangulation->execute_coarsening_and_refinement();
     dg->high_order_grid->execute_coarsening_and_refinement();
-    
+    pcout<<"clue 3.5"<<std::endl;
     dg->allocate_system ();
+    pcout<<"clue 3.6"<<std::endl;
     dg->solution.zero_out_ghosts();
     solution_transfer.interpolate(dg->solution);
     dg->solution.update_ghost_values();
-    dg->assemble_residual ();
+    pcout<<"clue 3.7"<<std::endl;
+    dg->assemble_residual (); //why do we need to do this?
+    pcout<<"clue 3.8"<<std::endl;
 }
 
 template <int dim, typename real, typename MeshType>

@@ -30,6 +30,8 @@ subsection mesh adaptation
     subsection fixed-fraction
       set refine_fraction = 0.5
       set h_coarsen_fraction = 0.0
+    end
+    subsection threshold
       set refine_threshold_p = 0.001296
       set coarsen_threshold_p = 0.001
     end
@@ -50,8 +52,8 @@ end
 
 subsection flow_solver
   set flow_case_type = taylor_green_vortex
-  set poly_degree = 3
-  set max_poly_degree_for_adaptation = 4
+  set poly_degree = 1
+  set max_poly_degree_for_adaptation = 10
   set final_time = 1.0 #10
   set courant_friedrichs_lewy_number = 0.005 #0.001
   set unsteady_data_table_filename = tgv_entropy_vs_time_P_adaptation

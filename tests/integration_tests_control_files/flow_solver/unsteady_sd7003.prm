@@ -36,6 +36,10 @@ subsection mesh adaptation
     set refine_fraction = 0.5
     set h_coarsen_fraction = 0.0
   end
+  subsection threshold
+    set refine_threshold_p = 0.001296
+    set coarsen_threshold_p = 0.001
+  end
 end
  
 # additional parameters
@@ -93,9 +97,9 @@ subsection physics_model
 end
 
 subsection flow_solver
-  set flow_case_type = turbulent_airfoil_2D
+  set flow_case_type = turbulent_airfoil_3D
   set steady_state = false
-  set poly_degree = 3
+  set poly_degree = 15
   set max_poly_degree_for_adaptation = 4
   set final_time = 30.0
   set constant_time_step = 4.4E-5
@@ -115,7 +119,7 @@ subsection flow_solver
   end
   subsection grid
     set use_gmsh_mesh = true
-    set input_mesh_filename = ~/Downloads/SD7003_3rd_Order_Improved_BL_2D.msh
+    set input_mesh_filename = /lustre10/scratch/gillianh/SD7003_3rd_Order_4_Cell_Span
     subsection gmsh_boundary_IDs
       set use_periodic_BC_in_x = false
       set use_periodic_BC_in_y = false

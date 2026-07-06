@@ -49,7 +49,18 @@ public:
     const Parameters::MeshAdaptationParam *const mesh_adaptation_param;
 
     //Holds cellwise_errors (used for explicit mesh adaptation)
-    dealii::Vector<real> get_cellwise_errors() const {return mesh_error->compute_cellwise_errors};
+    // Call this only when the mesh or solution updates:
+    //void update_cellwise_errors() {
+       // cellwise_errors_cache = mesh_error->compute_cellwise_errors();
+    //}
+
+    // Call this whenever you just need to read the data (super fast, no re-computation):
+    const dealii::Vector<real>& get_cellwise_errors() const {
+        return cellwise_errors_cache;
+    }
+
+    /// Stores errors in each cell
+    dealii::Vector<real> cellwise_errors;
 
 protected:
     
@@ -62,7 +73,10 @@ protected:
     void mark_airfoil_layers(dealii::DoFHandler<dim> &dof_handler);
 
     /// Stores errors in each cell
-    dealii::Vector<real> cellwise_errors;
+    dealii::Vector<real> cellwise_errors_cache;
+
+    /// Stores errors in each cell
+    //dealii::Vector<real> cellwise_errors;
 
     /// Parallel std::cout.
     dealii::ConditionalOStream pcout;

@@ -104,6 +104,8 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         if(!cell->is_locally_owned())  continue;
         pcout<<"clue 1"<<std::endl;
         const unsigned int fe_index_curr_cell = cell->active_fe_index();
+
+        //if (fe_index_curr_cell == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation) continue;
         const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
         const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
         current_dofs_indices.resize(n_dofs_curr_cell);
@@ -137,7 +139,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
             if(cell->active_cell_index() == 0){
-                pcout<<"p+1_order_residual_per_cell =  "<<projected_residual[cell->active_cell_index()][idof]<<std::endl;
+                //pcout<<"p+1_order_residual_per_cell =  "<<projected_residual[cell->active_cell_index()][idof]<<std::endl;
                 }
             }
     }    
@@ -175,8 +177,8 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
                 rhs_cell = rhs_cell/(this->dg->solution[idof]);
             }
             if(cell->active_cell_index() == 0){
-                pcout<<"Solution for this DOF (AFTER Refinement): "<<this->dg->solution[idof]<<std::endl;
-                pcout<<"Projected residual for this DOF(AFTER): " <<projected_residual[cell->active_cell_index()][idof]<<std::endl;
+                //pcout<<"Solution for this DOF (AFTER Refinement): "<<this->dg->solution[idof]<<std::endl;
+                //pcout<<"Projected residual for this DOF(AFTER): " <<projected_residual[cell->active_cell_index()][idof]<<std::endl;
             }
 
             rhs_cell_sum += rhs_cell;
@@ -186,9 +188,9 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     }
     pcout<<"end of error estimation cell loop..."<<std::endl;
     
-    //this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh TURNED OFF FOR TROUBLESHOOTING
+    this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh TURNED OFF FOR TROUBLESHOOTING
     pcout<<"Restored mesh to coarse..."<<std::endl;
-    //this->dg->solution = Q_p; //restore solution vector TURNED OFF FOR TROUBLESHOOTING
+    this->dg->solution = Q_p; //restore solution vector TURNED OFF FOR TROUBLESHOOTING
     pcout<<"Restored solution vector..."<<std::endl;
     //adapt the p-order
     //std::vector<dealii::types::global_dof_index> dofs_indices;
@@ -251,7 +253,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
     {
         pcout<<"Polynomial degree of DG will exceed the maximum allowable after refinement. Update max_degree in dg"<<std::endl;
         std::abort();
-    }
+    } 
     
     [[maybe_unused]] unsigned int no_of_cells_before_changing_p = this->dg->triangulation->n_active_cells(); // used in debug mode (in assert).  
 
@@ -351,7 +353,8 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const uns
     
     //output error estimate
     //dealii::Vector<real> error_estimate = compute_cellwise_errors();
-    data_out.add_data_vector(cellwise_estimate, "error_estimate", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    //cellwise_errors = meshadaptation->cellwise_errors;
+    data_out.add_data_vector(cellwise_errors, "error_estimate", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
 
     // Output the polynomial degree in each cell
     std::vector<unsigned int> active_fe_indices;
