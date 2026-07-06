@@ -1,0 +1,31 @@
+
+{
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "2D_CTEST",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build_debug/bin/PHiLiP_3D",
+            "args": ["-i", "${workspaceFolder}/build_debug/tests/integration_tests_control_files/euler_entropy_conservation/euler_entropy_conserving_p_adaptation_check.prm"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build_debug/tests/integration_tests_control_files/euler_entropy_conservation/",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+]
+}
