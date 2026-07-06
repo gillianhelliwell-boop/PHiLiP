@@ -40,7 +40,7 @@ subsection ODE solver
   set ode_output = quiet
   set ode_solver_type = runge_kutta
   set runge_kutta_method = rk4_ex
-  #set output_solution_every_dt_time_intervals = 1.0E-2
+  set output_solution_every_dt_time_intervals = 1.0E-1
 end
 
 # freestream Mach number
@@ -52,7 +52,7 @@ subsection flow_solver
   set flow_case_type = taylor_green_vortex
   set poly_degree = 3
   set max_poly_degree_for_adaptation = 4
-  set final_time = 0.1 #10
+  set final_time = 1.0 #10
   set courant_friedrichs_lewy_number = 0.005 #0.001
   set unsteady_data_table_filename = tgv_entropy_vs_time_P_adaptation
   subsection grid

@@ -294,7 +294,7 @@ public:
      */
     void fine_to_coarse();
 
-    void output_results_vtk(const unsigned int cycle) override;
+    void output_results_vtk(const unsigned int cycle, dealii::Vector<real> &cellwise_errors) override;
 
     /// Constructor
     /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.

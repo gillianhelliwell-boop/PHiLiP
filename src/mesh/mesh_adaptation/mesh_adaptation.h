@@ -48,6 +48,9 @@ public:
     /// Holds parameters of mesh adaptation.
     const Parameters::MeshAdaptationParam *const mesh_adaptation_param;
 
+    //Holds cellwise_errors (used for explicit mesh adaptation)
+    dealii::Vector<real> get_cellwise_errors() const {return mesh_error->compute_cellwise_errors};
+
 protected:
     
     /// Performs fixed fraction refinement based on refinement and coarsening fractions.

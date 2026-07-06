@@ -35,6 +35,9 @@ void MeshAdaptationParam::declare_parameters (dealii::ParameterHandler &prm)
                           dealii::Patterns::Bool(),
                           "Flag to use goal oriented mesh adaptation. False by default.");
         
+        prm.declare_entry("p_refine_threshold", "0.007",
+                            dealii::Patterns::Double(0.0, 1.0e5),
+                            "Error estimate threshold to refine p.");
         prm.enter_subsection("fixed-fraction");
         {
             prm.declare_entry("refine_fraction","0.0",
@@ -93,6 +96,7 @@ void MeshAdaptationParam::parse_parameters (dealii::ParameterHandler &prm)
         use_goal_oriented_mesh_adaptation = prm.get_bool("use_goal_oriented_mesh_adaptation");
 
         use_LES_mesh_adaptation = prm.get_bool("use_LES_mesh_adaptation");
+        p_refine_threshold = prm.get_double("p_refine_threshold");
 
         prm.enter_subsection("fixed-fraction");
         {

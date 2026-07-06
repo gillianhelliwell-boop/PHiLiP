@@ -19,7 +19,9 @@ void MeshAdaptation<dim,real,MeshType>::adapt_mesh()
 {
     [[maybe_unused]] unsigned int expected_size_of_cellwise_errors = dg->triangulation->n_active_cells();
     pcout<<"About to call compute_cellwise_errors..."<<std::endl;
-    cellwise_errors = mesh_error->compute_cellwise_errors();
+    //save cellwise_errors as a member of MeshAdaptation
+    cellwise_errors = get_cellwise_errors();
+    //cellwise_errors = mesh_error->compute_cellwise_errors();
     pcout<<"Called compute_cellwise_errors..."<<std::endl;
 
     [[maybe_unused]] unsigned int actual_size_of_cellwise_errors = cellwise_errors.size();

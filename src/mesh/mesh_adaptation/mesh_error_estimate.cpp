@@ -332,7 +332,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::fine_to_coarse()
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle)
+void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors)
 {
     dealii::DataOut<dim, dealii::DoFHandler<dim>> data_out;
     data_out.attach_dof_handler(this->dg->dof_handler);
@@ -347,9 +347,11 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const uns
     }
     data_out.add_data_vector(subdomain, "subdomain", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
 
+    //get parameter compute_cellwise_errors
+    
     //output error estimate
-    dealii::Vector<real> error_estimate = compute_cellwise_errors();
-    data_out.add_data_vector(error_estimate, "error_estimate", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    //dealii::Vector<real> error_estimate = compute_cellwise_errors();
+    data_out.add_data_vector(cellwise_estimate, "error_estimate", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
 
     // Output the polynomial degree in each cell
     std::vector<unsigned int> active_fe_indices;

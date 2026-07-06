@@ -22,6 +22,9 @@ public:
     
     /// Total/maximum number of mesh adaptation cycles while solving a problem.
     int total_mesh_adaptation_cycles;
+
+    //Threshold of error for p-adaptation
+    double p_refine_threshold;
     
     /// Fraction of cells to be h or p-refined
     double refine_fraction;
