@@ -207,9 +207,10 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         for (unsigned int state = 0; state < (nstate); ++state)
         {
             pcout<<"state: "<<state<<"; rhs_per_state: "<<rhs_per_state[state]<<"; n_dofs_per_state: "<<n_dofs_per_state[state]<<"; average_per_state: "<<average_per_state[state]<<std::endl;
-            if (average_per_state[state] < 1e-10) continue;
+            if (average_per_state[state] < 1e-10) continue; //eliminate threat of division by zero
             pcout<<"state: "<<state<<"; rhs_per_state: "<<rhs_per_state[state]<<"; n_dofs_per_state: "<<n_dofs_per_state[state]<<"; average_per_state: "<<average_per_state[state]<<std::endl;
             unsteady_residual[cell->active_cell_index()] += (rhs_per_state[state]*n_dofs_per_state[state])/average_per_state[state];
+            pcout<<"unsteady residual: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
         }
 
     }
