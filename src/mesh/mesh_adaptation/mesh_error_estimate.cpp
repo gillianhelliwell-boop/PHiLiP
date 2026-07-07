@@ -165,10 +165,17 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         cell->get_dof_indices(current_dofs_indices);
 
         real rhs_cell = 0;
-        real rhs_cell_sum = 0;
         //pcout<<"cell"<<cell->active_cell_index()<<":"<<std::endl;
         //pcout<<"Size of projected_residual[cell->active_cell_index()]: "<<projected_residual[cell->active_cell_index()].size()<<std::endl;
         //pcout<<"Number of DOFs in current cell: "<<n_dofs_curr_cell<<std::endl;
+
+        //store the average of each state per cell
+        std::vector<real> average_per_state(nstate);
+        std::vector<real> rhs_per_state(nstate);
+        std::vector<int> n_dofs_per_state(nstate);
+
+        /*
+        real rhs_cell_sum = 0;
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
             //pcout<<"Solution for this DOF: "<<this->dg->solution[idof]<<std::endl;
@@ -181,10 +188,27 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
                 //pcout<<"Projected residual for this DOF(AFTER): " <<projected_residual[cell->active_cell_index()][idof]<<std::endl;
             }
 
-            rhs_cell_sum += rhs_cell;
         }  
+            
+        unsteady_residual[cell->active_cell_index()] = std::abs(rhs_cell_sum/(nstate*n_dofs_curr_cell));*/
         //pcout<<"rhs_cell_sum="<<rhs_cell_sum<<std::endl;
-        unsteady_residual[cell->active_cell_index()] = std::abs(rhs_cell_sum/(nstate*n_dofs_curr_cell));
+
+        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
+        {
+            //pcout<<"Solution for this DOF: "<<this->dg->solution[idof]<<std::endl;
+            rhs_cell = std::abs((this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof]));
+
+            std::pair<unsigned int, unsigned int> state_and_node = cell->get_fe().system_to_component_index(idof);
+            rhs_per_state[state_and_node.first] += rhs_cell;
+            average_per_state[state_and_node.first] += this->dg->solution[idof]; //DIVIDE BY NDOFS CURR CELL
+            n_dofs_per_state[state_and_node.first]++;
+        }
+        
+        for (unsigned int state = 0; state < (nstate+1); ++state)
+        {
+            unsteady_residual[cell->active_cell_index()] += (rhs_per_state[state]*n_dofs_per_state[state])/average_per_state[state];
+        }
+
     }
     pcout<<"end of error estimation cell loop..."<<std::endl;
     
@@ -224,7 +248,7 @@ template <int dim, int nstate, typename real, typename MeshType>
 void LESErrorEstimate<dim, nstate, real, MeshType>::convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum required_refinement_state)
 {   
     // checks if conversion is needed
-    pcout<<"SolutionRefinementStateEnum: "<<SolutionRefinementStateEnum<<std::endl;
+    pcout<<"SolutionRefinementStateEnum: "<<solution_refinement_state<<std::endl;
     pcout<<"Required refinement state: "<<required_refinement_state<<std::endl;
     if(solution_refinement_state == required_refinement_state)
     {
