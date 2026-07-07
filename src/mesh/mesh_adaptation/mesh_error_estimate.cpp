@@ -199,13 +199,16 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
             rhs_cell = std::abs((this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof]));
 
             std::pair<unsigned int, unsigned int> state_and_node = cell->get_fe().system_to_component_index(idof);
-            rhs_per_state[state_and_node.first] += rhs_cell;
-            average_per_state[state_and_node.first] += this->dg->solution[idof]; //DIVIDE BY NDOFS CURR CELL
+            rhs_per_state[state_and_node.first] += std::abs(rhs_cell);
+            average_per_state[state_and_node.first] += std::abs(this->dg->solution[idof]); //DIVIDE BY NDOFS CURR CELL
             n_dofs_per_state[state_and_node.first]++;
         }
         
-        for (unsigned int state = 0; state < (nstate+1); ++state)
+        for (unsigned int state = 0; state < (nstate); ++state)
         {
+            pcout<<"state: "<<state<<"; rhs_per_state: "<<rhs_per_state[state]<<"; n_dofs_per_state: "<<n_dofs_per_state[state]<<"; average_per_state: "<<average_per_state[state]<<std::endl;
+            if (average_per_state[state] < 1e-10) continue;
+            pcout<<"state: "<<state<<"; rhs_per_state: "<<rhs_per_state[state]<<"; n_dofs_per_state: "<<n_dofs_per_state[state]<<"; average_per_state: "<<average_per_state[state]<<std::endl;
             unsteady_residual[cell->active_cell_index()] += (rhs_per_state[state]*n_dofs_per_state[state])/average_per_state[state];
         }
 
