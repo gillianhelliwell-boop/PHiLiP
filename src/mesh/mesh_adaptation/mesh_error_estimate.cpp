@@ -224,6 +224,8 @@ template <int dim, int nstate, typename real, typename MeshType>
 void LESErrorEstimate<dim, nstate, real, MeshType>::convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum required_refinement_state)
 {   
     // checks if conversion is needed
+    pcout<<"SolutionRefinementStateEnum: "<<SolutionRefinementStateEnum<<std::endl;
+    pcout<<"Required refinement state: "<<required_refinement_state<<std::endl;
     if(solution_refinement_state == required_refinement_state)
     {
         return;
@@ -309,7 +311,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::fine_to_coarse()
 {
     [[maybe_unused]] unsigned int no_of_cells_before_changing_p = this->dg->triangulation->n_active_cells(); // Used in assert (i.e remains unused in Release mode).
     this->dg->high_order_grid->prepare_for_coarsening_and_refinement();
-
+    pcout<<"fine_to_coarse clue 1"<<std::endl;
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if (cell->is_locally_owned()) 
@@ -317,10 +319,11 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::fine_to_coarse()
             cell->set_future_fe_index(coarse_fe_index[cell->active_cell_index()]);
         }
     }
-
+    pcout<<"fine_to_coarse clue 2"<<std::endl;
     this->dg->triangulation->execute_coarsening_and_refinement();
+    pcout<<"fine_to_coarse clue 3"<<std::endl;
     this->dg->high_order_grid->execute_coarsening_and_refinement();
-
+    pcout<<"fine_to_coarse clue 4"<<std::endl;
     this->dg->allocate_system();
     this->dg->solution.zero_out_ghosts();
 
