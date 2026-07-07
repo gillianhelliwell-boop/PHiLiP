@@ -95,6 +95,11 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     std::vector<std::vector<real>> p_order_residual(this->dg->triangulation->n_active_cells());
     std::vector<std::vector<real>> projected_residual(this->dg->triangulation->n_active_cells());
 
+    //record average solution per state in each cell for normalization
+    std::vector<real> sum_per_state(nstate);
+    std::vector<int> dofs_per_state(nstate);
+    //std::vector<int> n_dofs_per_state(nstate);
+
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
     pcout<<"About to go through cell loop..."<<std::endl;
@@ -141,7 +146,10 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
             if(cell->active_cell_index() == 0){
                 //pcout<<"p+1_order_residual_per_cell =  "<<projected_residual[cell->active_cell_index()][idof]<<std::endl;
                 }
+            sum_per_state[(cell->get_fe().system_to_component_index(idof)).first] += std::abs(this->dg->solution[idof]); 
+            dofs_per_state[(cell->get_fe().system_to_component_index(idof)).first]++;
             }
+        
     }    
     //project mesh to p+1
     this->reinit(); //do we need this?? maybe for residual vector. remove
@@ -170,9 +178,9 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         //pcout<<"Number of DOFs in current cell: "<<n_dofs_curr_cell<<std::endl;
 
         //store the average of each state per cell
-        std::vector<real> average_per_state(nstate);
+        //std::vector<real> average_per_state(nstate);
         std::vector<real> rhs_per_state(nstate);
-        std::vector<int> n_dofs_per_state(nstate);
+        //std::vector<int> n_dofs_per_state(nstate);
 
         /*
         real rhs_cell_sum = 0;
@@ -200,16 +208,16 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
             std::pair<unsigned int, unsigned int> state_and_node = cell->get_fe().system_to_component_index(idof);
             rhs_per_state[state_and_node.first] += std::abs(rhs_cell);
-            average_per_state[state_and_node.first] += std::abs(this->dg->solution[idof]); //DIVIDE BY NDOFS CURR CELL
-            n_dofs_per_state[state_and_node.first]++;
+            //average_per_state[state_and_node.first] += std::abs(this->dg->solution[idof]); //DIVIDE BY NDOFS CURR CELL
+            //n_dofs_per_state[state_and_node.first]++;
         }
         
         for (unsigned int state = 0; state < (nstate); ++state)
         {
-            pcout<<"state: "<<state<<"; rhs_per_state: "<<rhs_per_state[state]<<"; n_dofs_per_state: "<<n_dofs_per_state[state]<<"; average_per_state: "<<average_per_state[state]<<std::endl;
-            if (average_per_state[state] < 1e-10) continue; //eliminate threat of division by zero
-            pcout<<"state: "<<state<<"; rhs_per_state: "<<rhs_per_state[state]<<"; n_dofs_per_state: "<<n_dofs_per_state[state]<<"; average_per_state: "<<average_per_state[state]<<std::endl;
-            unsteady_residual[cell->active_cell_index()] += (rhs_per_state[state]*n_dofs_per_state[state])/average_per_state[state];
+            pcout<<"state: "<<state<<"; rhs_per_state: "<<rhs_per_state[state]<<"; n_dofs_per_state: "<<dofs_per_state[state]<<"; average_per_state: "<<sum_per_state[state]<<std::endl;
+            if (sum_per_state[state] < 1e-10) continue; //eliminate threat of division by zero
+            pcout<<"state: "<<state<<"; rhs_per_state: "<<rhs_per_state[state]<<"; n_dofs_per_state: "<<dofs_per_state[state]<<"; average_per_state: "<<sum_per_state[state]<<std::endl;
+            unsteady_residual[cell->active_cell_index()] += (rhs_per_state[state]*dofs_per_state[state])/sum_per_state[state];
             pcout<<"unsteady residual: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
         }
 

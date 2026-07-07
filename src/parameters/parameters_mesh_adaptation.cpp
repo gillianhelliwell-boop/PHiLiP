@@ -12,7 +12,7 @@ void MeshAdaptationParam::declare_parameters (dealii::ParameterHandler &prm)
         prm.declare_entry("total_mesh_adaptation_cycles","0",
                            dealii::Patterns::Integer(),
                           "Maximum adaptation steps for a problem.");
-
+                  
         prm.declare_entry("mesh_adaptation_type", "h_adaptation",
                           dealii::Patterns::Selection(
                           " h_adaptation | "
@@ -57,11 +57,11 @@ void MeshAdaptationParam::declare_parameters (dealii::ParameterHandler &prm)
         prm.enter_subsection("threshold");
         {
             prm.declare_entry("refine_threshold_p","0.0",
-                              dealii::Patterns::Double(0.0,1.0),
+                              dealii::Patterns::Double(0.0,1.0e5),
                               "Threshold cells to be p-refined.");
 
             prm.declare_entry("coarsen_threshold_p","0.0",
-                              dealii::Patterns::Double(0.0,1.0),
+                              dealii::Patterns::Double(0.0,1.0e3),
                               "Threshold cells to be p-coarsened.");
         }
         prm.leave_subsection();// "fixed-fraction"
