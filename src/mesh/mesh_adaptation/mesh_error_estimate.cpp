@@ -86,28 +86,28 @@ LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_pt
 template <int dim, int nstate, typename real, typename MeshType>
 dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
+    //the below code computes the unsteady residual of value epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
     auto Q_p = this->dg->solution; //save original solution
     //compute residual at p+1
     this->dg->assemble_residual();
     pcout<<"Residual is assembled..."<<std::endl;
 
-    //calculate Projection(R{Q_p})
+    //required variables to calculate P_{p+1}[Res(Q_p)]
     std::vector<std::vector<real>> p_order_residual(this->dg->triangulation->n_active_cells());
     std::vector<std::vector<real>> projected_residual(this->dg->triangulation->n_active_cells());
 
     //record average solution per state in each cell for normalization
-    std::vector<real> sum_per_state(nstate);
-    std::vector<int> dofs_per_state(nstate);
-    //std::vector<int> n_dofs_per_state(nstate);
+    std::vector<real> sum_per_state(nstate, 0.0);
+    int dofs_per_state = (this->dg->dof_handler.locally_owned_dofs().size() / nstate);
 
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
     pcout<<"About to go through cell loop..."<<std::endl;
 
+    // cell loop to project the residual to p+1 and obtain P_{p+1}[Res(Q_p)]
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if(!cell->is_locally_owned())  continue;
-        pcout<<"clue 1"<<std::endl;
         const unsigned int fe_index_curr_cell = cell->active_fe_index();
 
         //if (fe_index_curr_cell == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation) continue;
@@ -115,51 +115,32 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
         current_dofs_indices.resize(n_dofs_curr_cell);
         cell->get_dof_indices(current_dofs_indices);
-        pcout<<"clue 2"<<std::endl;
-        p_order_residual[cell->active_cell_index()].resize(n_dofs_curr_cell);   //resize vector for DOFs of current cell
-         //gather inputs for project_function(), and then project the rhs to p+1
+        p_order_residual[cell->active_cell_index()].resize(n_dofs_curr_cell);   //resize vector of the active cell according to its number of DOFs
+         
+        //gather inputs for project_function(), and then project the rhs of active cell to p+1
         const int poly_degree = cell->active_fe_index();
         pcout << "poly_degree: " << static_cast<unsigned int>(poly_degree) << std::endl;
-        if (static_cast<unsigned int>(cell->active_fe_index() + 1) >= this->dg->fe_collection.size()) {
-           pcout << "ERROR: cell " << cell->active_cell_index()
-                 << " has fe_index " << cell->active_fe_index()
-                 << " but fe_collection only has " << this->dg->fe_collection.size()
-                 << " entries!" << std::endl;
-        }
-
-        pcout<<"clue 3 and poly_degree: "<<poly_degree<<std::endl;
         const dealii::FESystem<dim,dim> &fe_input = this->dg->fe_collection[poly_degree];
-        pcout<<"clue 3.5"<<std::endl;
         const dealii::FESystem<dim,dim> &fe_output = this->dg->fe_collection[poly_degree + 1];  
-        pcout<<"clue 4"<<std::endl;
-        const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell +2);
-        pcout<<"clue 5"<<std::endl;
-
+        const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell + 2); //notation is +2 to account for Gauss 2n-1 rule
         std::vector<real> p_order_residual_per_cell = p_order_residual[cell->active_cell_index()];
-        pcout<<"About to call project_function..."<<std::endl;
 
         projected_residual[cell->active_cell_index()] = project_function(p_order_residual_per_cell, fe_input, fe_output, projection_quadrature); 
-        pcout<<"called project_function..."<<std::endl;
-
+  
+        //calculate time average solution for normalization
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
-            if(cell->active_cell_index() == 0){
-                //pcout<<"p+1_order_residual_per_cell =  "<<projected_residual[cell->active_cell_index()][idof]<<std::endl;
-                }
             sum_per_state[(cell->get_fe().system_to_component_index(idof)).first] += std::abs(this->dg->solution[idof]); 
-            dofs_per_state[(cell->get_fe().system_to_component_index(idof)).first]++;
             }
         
     }    
-    //project mesh to p+1
+    //Project mesh to p+1 to compute Res(P_{p+1}[Q_p])
     this->reinit(); //do we need this?? maybe for residual vector. remove
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
     pcout<<"Projected mesh to p+1..."<<std::endl;
     this->dg->assemble_residual(); //assemble residual of projected mesh
-    pcout<<"Assembled residual of projected mesh..."<<std::endl;
-
     unsteady_residual.reinit(this->dg->triangulation->n_active_cells());
-    // compute the error indicator cell-wise by taking the dot product over the DOFs with the residual vector
+
     pcout<<"About to go through cell loop for error indicator..."<<std::endl;
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
@@ -172,67 +153,37 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         current_dofs_indices.resize(n_dofs_curr_cell);
         cell->get_dof_indices(current_dofs_indices);
 
+        // compute epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
         real rhs_cell = 0;
-        //pcout<<"cell"<<cell->active_cell_index()<<":"<<std::endl;
-        //pcout<<"Size of projected_residual[cell->active_cell_index()]: "<<projected_residual[cell->active_cell_index()].size()<<std::endl;
-        //pcout<<"Number of DOFs in current cell: "<<n_dofs_curr_cell<<std::endl;
-
-        //store the average of each state per cell
-        //std::vector<real> average_per_state(nstate);
-        std::vector<real> rhs_per_state(nstate);
-        //std::vector<int> n_dofs_per_state(nstate);
-
-        /*
-        real rhs_cell_sum = 0;
-        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
-        {
-            //pcout<<"Solution for this DOF: "<<this->dg->solution[idof]<<std::endl;
-            rhs_cell = std::abs((this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof])); //subtract here
-            if (this->dg->solution[idof] > 1.0) {
-                rhs_cell = rhs_cell/(this->dg->solution[idof]);
-            }
-            if(cell->active_cell_index() == 0){
-                //pcout<<"Solution for this DOF (AFTER Refinement): "<<this->dg->solution[idof]<<std::endl;
-                //pcout<<"Projected residual for this DOF(AFTER): " <<projected_residual[cell->active_cell_index()][idof]<<std::endl;
-            }
-
-        }  
-            
-        unsteady_residual[cell->active_cell_index()] = std::abs(rhs_cell_sum/(nstate*n_dofs_curr_cell));*/
-        //pcout<<"rhs_cell_sum="<<rhs_cell_sum<<std::endl;
+        std::vector<real> residual_per_state_per_cell(nstate, 0.0);
 
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
-            //pcout<<"Solution for this DOF: "<<this->dg->solution[idof]<<std::endl;
             rhs_cell = std::abs((this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof]));
-
             std::pair<unsigned int, unsigned int> state_and_node = cell->get_fe().system_to_component_index(idof);
-            rhs_per_state[state_and_node.first] += std::abs(rhs_cell);
-            //average_per_state[state_and_node.first] += std::abs(this->dg->solution[idof]); //DIVIDE BY NDOFS CURR CELL
-            //n_dofs_per_state[state_and_node.first]++;
+            residual_per_state_per_cell[state_and_node.first] += std::abs(rhs_cell);
         }
         
-        for (unsigned int state = 0; state < (nstate); ++state)
+        //normalize the solution at each state
+        real residual_momentum = 0.0;
+        real dofs_momentum = 0;
+        for (unsigned int state = 1; state < (nstate - 1); ++state)
         {
-            pcout<<"state: "<<state<<"; rhs_per_state: "<<rhs_per_state[state]<<"; n_dofs_per_state: "<<dofs_per_state[state]<<"; average_per_state: "<<sum_per_state[state]<<std::endl;
             if (sum_per_state[state] < 1e-10) continue; //eliminate threat of division by zero
-            pcout<<"state: "<<state<<"; rhs_per_state: "<<rhs_per_state[state]<<"; n_dofs_per_state: "<<dofs_per_state[state]<<"; average_per_state: "<<sum_per_state[state]<<std::endl;
-            unsteady_residual[cell->active_cell_index()] += (rhs_per_state[state]*dofs_per_state[state])/sum_per_state[state];
-            pcout<<"unsteady residual: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
+            pcout<<"state: "<<state<<"; rhs_per_state: "<<residual_per_state_per_cell[state]<<"; n_dofs_per_state: "<<dofs_per_state<<"; sum_per_state: "<<sum_per_state[state]<<std::endl;
+            residual_momentum += residual_per_state_per_cell[state]/sum_per_state[state];
+            dofs_momentum += dofs_per_state;
         }
-
+        real residual_mass = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
+        real residual_energy = residual_per_state_per_cell[(nstate - 1)]*dofs_per_state/sum_per_state[(nstate - 1)];
+        unsteady_residual[cell->active_cell_index()] = residual_mass + (residual_momentum/dofs_momentum) + residual_energy;
+        pcout<<"UNSTEADY RESIDUAL: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
     }
     pcout<<"end of error estimation cell loop..."<<std::endl;
     
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh TURNED OFF FOR TROUBLESHOOTING
     pcout<<"Restored mesh to coarse..."<<std::endl;
     this->dg->solution = Q_p; //restore solution vector TURNED OFF FOR TROUBLESHOOTING
-    pcout<<"Restored solution vector..."<<std::endl;
-    //adapt the p-order
-    //std::vector<dealii::types::global_dof_index> dofs_indices;
-    //dealii::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
-    pcout<<"end of error estimation..."<<std::endl;
-    
     return unsteady_residual;
 }
 
