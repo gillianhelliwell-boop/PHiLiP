@@ -116,6 +116,10 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         current_dofs_indices.resize(n_dofs_curr_cell);
         cell->get_dof_indices(current_dofs_indices);
         p_order_residual[cell->active_cell_index()].resize(n_dofs_curr_cell);   //resize vector of the active cell according to its number of DOFs
+        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
+        {
+            p_order_residual[cell->active_cell_index()][idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
+        }
          
         //gather inputs for project_function(), and then project the rhs of active cell to p+1
         const int poly_degree = cell->active_fe_index();
