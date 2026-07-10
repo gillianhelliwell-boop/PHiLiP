@@ -119,6 +119,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
             p_order_residual[cell->active_cell_index()][idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
+            sum_per_state[(cell->get_fe().system_to_component_index(idof)).first] += std::abs(this->dg->solution[current_dofs_indices[idof]]); //calculate time average solution for normalization
         }
          
         //gather inputs for project_function(), and then project the rhs of active cell to p+1
@@ -130,14 +131,11 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         std::vector<real> p_order_residual_per_cell = p_order_residual[cell->active_cell_index()];
 
         projected_residual[cell->active_cell_index()] = project_function(p_order_residual_per_cell, fe_input, fe_output, projection_quadrature); 
-  
-        //calculate time average solution for normalization
-        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
-        {
-            sum_per_state[(cell->get_fe().system_to_component_index(idof)).first] += std::abs(this->dg->solution[idof]); 
-            }
         
     }    
+    // add sum_per_state across all MPI ranks
+    MPI_Allreduce(MPI_IN_PLACE, sum_per_state.data(), nstate, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
     //Project mesh to p+1 to compute Res(P_{p+1}[Q_p])
     this->reinit(); //do we need this?? maybe for residual vector. remove
     this->convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
@@ -153,17 +151,19 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         const unsigned int fe_index_curr_cell = cell->active_fe_index();
         const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
         const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
+        // check sizes are consistent
+        Assert(projected_residual[cell->active_cell_index()].size() == n_dofs_curr_cell,
+        dealii::ExcMessage("projected_residual size mismatch after mesh refinement"));
 
         current_dofs_indices.resize(n_dofs_curr_cell);
         cell->get_dof_indices(current_dofs_indices);
 
         // compute epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
-        real rhs_cell = 0;
         std::vector<real> residual_per_state_per_cell(nstate, 0.0);
 
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
-            rhs_cell = std::abs((this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof]));
+            const real rhs_cell = this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof];
             std::pair<unsigned int, unsigned int> state_and_node = cell->get_fe().system_to_component_index(idof);
             residual_per_state_per_cell[state_and_node.first] += std::abs(rhs_cell);
         }
