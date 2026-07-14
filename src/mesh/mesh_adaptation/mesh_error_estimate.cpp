@@ -87,8 +87,9 @@ template <int dim, int nstate, typename real, typename MeshType>
 dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
     //the below code computes the unsteady residual of value epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
-    auto Q_p = this->dg->solution; //save original solution
+    //auto Q_p = this->dg->solution; //save original solution
     //compute residual at p+1
+    reinit();
     this->dg->assemble_residual();
     pcout<<"Residual is assembled..."<<std::endl;
 
@@ -198,7 +199,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     
     convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh TURNED OFF FOR TROUBLESHOOTING
     pcout<<"Restored mesh to coarse..."<<std::endl;
-    this->dg->solution = Q_p; //restore solution vector TURNED OFF FOR TROUBLESHOOTING
+    //this->dg->solution = Q_p; //restore solution vector 
     return unsteady_residual;
 }
 
