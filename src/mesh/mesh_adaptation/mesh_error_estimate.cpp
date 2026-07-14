@@ -137,7 +137,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     MPI_Allreduce(MPI_IN_PLACE, sum_per_state.data(), nstate, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
     //Project mesh to p+1 to compute Res(P_{p+1}[Q_p])
-    reinit(); //do we need this?? maybe for residual vector. remove
+    //reinit(); //do we need this?? maybe for residual vector. remove
     convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
     pcout<<"Projected mesh to p+1..."<<std::endl;
     this->dg->assemble_residual(); //assemble residual of projected mesh
