@@ -133,6 +133,9 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         projected_residual[cell->active_cell_index()] = project_function(p_order_residual_per_cell, fe_input, fe_output, projection_quadrature); 
         
     }    
+    //free p_order_residual to clear memory
+    p_order_residual.clear();
+    p_order_residual.shrink_to_fit();
     // add sum_per_state across all MPI ranks
     MPI_Allreduce(MPI_IN_PLACE, sum_per_state.data(), nstate, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
