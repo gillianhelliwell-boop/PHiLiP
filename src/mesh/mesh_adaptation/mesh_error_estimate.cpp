@@ -124,7 +124,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
          
         //gather inputs for project_function(), and then project the rhs of active cell to p+1
         const int poly_degree = cell->active_fe_index();
-        pcout << "poly_degree: " << static_cast<unsigned int>(poly_degree) << std::endl;
+        pcout <<"current cell: "<<cell->active_cell_index()<< "poly_degree: " << static_cast<unsigned int>(poly_degree) << std::endl;
         const dealii::FESystem<dim,dim> &fe_input = this->dg->fe_collection[poly_degree];
         const dealii::FESystem<dim,dim> &fe_output = this->dg->fe_collection[poly_degree + 1];  
         const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell + 2); //notation is +2 to account for Gauss 2n-1 rule
@@ -158,6 +158,11 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         current_dofs_indices.resize(n_dofs_curr_cell);
         cell->get_dof_indices(current_dofs_indices);
 
+        pcout << "cell " << cell->active_cell_index() 
+        << ": rhs[0]=" << this->dg->right_hand_side[current_dofs_indices[0]]
+        << ": proj[0]=" << projected_residual[cell->active_cell_index()][0]
+        << std::endl;
+
         // compute epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
         std::vector<real> residual_per_state_per_cell(nstate, 0.0);
 
@@ -165,22 +170,25 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         {
             const real rhs_cell = this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof];
             std::pair<unsigned int, unsigned int> state_and_node = cell->get_fe().system_to_component_index(idof);
+            //pcout<<"current state: "<<(state_and_node.first)<<"; current residual_per_state_per_cell: "<<residual_per_state_per_cell[state_and_node.first]<<std::endl;
             residual_per_state_per_cell[state_and_node.first] += std::abs(rhs_cell);
         }
         
         //normalize the solution at each state
         real residual_momentum = 0.0;
         real dofs_momentum = 0;
-        for (unsigned int state = 1; state < (nstate - 1); ++state)
+
+        //combine residual of all momentum states
+        for (unsigned int state = 1; state < (nstate-1); ++state)
         {
             if (sum_per_state[state] < 1e-10) continue; //eliminate threat of division by zero
-            pcout<<"state: "<<state<<"; rhs_per_state: "<<residual_per_state_per_cell[state]<<"; n_dofs_per_state: "<<dofs_per_state<<"; sum_per_state: "<<sum_per_state[state]<<std::endl;
-            residual_momentum += residual_per_state_per_cell[state]/sum_per_state[state];
+            residual_momentum += (residual_per_state_per_cell[state]/sum_per_state[state]);
             dofs_momentum += dofs_per_state;
         }
         real residual_mass = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
         real residual_energy = residual_per_state_per_cell[(nstate - 1)]*dofs_per_state/sum_per_state[(nstate - 1)];
         unsteady_residual[cell->active_cell_index()] = residual_mass + (residual_momentum/dofs_momentum) + residual_energy;
+        pcout<<"residual mass: "<<residual_mass<<"; residual momentum: "<<(residual_momentum/dofs_momentum)<<"; residual energy: "<<residual_energy<<std::endl;
         pcout<<"UNSTEADY RESIDUAL: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
     }
     pcout<<"end of error estimation cell loop..."<<std::endl;
