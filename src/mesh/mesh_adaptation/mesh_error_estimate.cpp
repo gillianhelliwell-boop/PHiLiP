@@ -94,7 +94,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     pcout<<"Residual is assembled..."<<std::endl;
 
     //required variables to calculate P_{p+1}[Res(Q_p)]
-    std::vector<std::vector<real>> p_order_residual(this->dg->triangulation->n_active_cells());
+    //std::vector<std::vector<real>> p_order_residual(this->dg->triangulation->n_active_cells());
     std::vector<std::vector<real>> projected_residual(this->dg->triangulation->n_active_cells());
 
     //record average solution per state in each cell for normalization
@@ -116,10 +116,11 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
         current_dofs_indices.resize(n_dofs_curr_cell);
         cell->get_dof_indices(current_dofs_indices);
-        p_order_residual[cell->active_cell_index()].resize(n_dofs_curr_cell);   //resize vector of the active cell according to its number of DOFs
+        std::vector<real> p_order_residual(n_dofs_curr_cell);
+       
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
-            p_order_residual[cell->active_cell_index()][idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
+            p_order_residual[idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
             sum_per_state[(cell->get_fe().system_to_component_index(idof)).first] += std::abs(this->dg->solution[current_dofs_indices[idof]]); //calculate time average solution for normalization
         }
          
@@ -131,12 +132,9 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell + 2); //notation is +2 to account for Gauss 2n-1 rule
         //std::vector<real> p_order_residual_per_cell = p_order_residual[cell->active_cell_index()];
 
-        projected_residual[cell->active_cell_index()] = project_function(p_order_residual[cell->active_cell_index()], fe_input, fe_output, projection_quadrature); 
+        projected_residual[cell->active_cell_index()] = project_function(p_order_residual, fe_input, fe_output, projection_quadrature); 
         
     }    
-    //free p_order_residual to clear memory
-    p_order_residual.clear();
-    p_order_residual.shrink_to_fit();
     // add sum_per_state across all MPI ranks
     MPI_Allreduce(MPI_IN_PLACE, sum_per_state.data(), nstate, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
