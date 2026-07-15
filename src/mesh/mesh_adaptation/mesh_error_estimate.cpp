@@ -129,9 +129,9 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         const dealii::FESystem<dim,dim> &fe_input = this->dg->fe_collection[poly_degree];
         const dealii::FESystem<dim,dim> &fe_output = this->dg->fe_collection[poly_degree + 1];  
         const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell + 2); //notation is +2 to account for Gauss 2n-1 rule
-        std::vector<real> p_order_residual_per_cell = p_order_residual[cell->active_cell_index()];
+        //std::vector<real> p_order_residual_per_cell = p_order_residual[cell->active_cell_index()];
 
-        projected_residual[cell->active_cell_index()] = project_function(p_order_residual_per_cell, fe_input, fe_output, projection_quadrature); 
+        projected_residual[cell->active_cell_index()] = project_function(p_order_residual[cell->active_cell_index()], fe_input, fe_output, projection_quadrature); 
         
     }    
     //free p_order_residual to clear memory
