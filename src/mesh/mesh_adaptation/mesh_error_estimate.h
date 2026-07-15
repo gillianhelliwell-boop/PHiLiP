@@ -42,10 +42,10 @@ class MeshErrorEstimateBase
 public:
 
     /// Computes the vector containing errors in each cell.
-    virtual dealii::Vector<real> compute_cellwise_errors () = 0;
+    virtual dealii::LinearAlgebra::distributed::Vector<real> compute_cellwise_errors () = 0;
 
     //outputs the results
-    virtual void output_results_vtk(const unsigned int /*cycle*/, const dealii::Vector<real> &/*cellwise_errors*/) {};
+    virtual void output_results_vtk(const unsigned int /*cycle*/, const dealii::LinearAlgebra::distributed::Vector<real> &/*cellwise_errors*/) {};
 
     /// Constructor
     MeshErrorEstimateBase(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input);
@@ -69,7 +69,7 @@ class ResidualErrorEstimate : public MeshErrorEstimateBase <dim, real, MeshType>
 
 public:
     /// Computes maximum residual error in each cell.
-    dealii::Vector<real> compute_cellwise_errors () override;
+    dealii::LinearAlgebra::distributed::Vector<real> compute_cellwise_errors () override;
 
     /// Constructor
     ResidualErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input);
@@ -90,7 +90,7 @@ class ExplicitErrorEstimate : public MeshErrorEstimateBase <dim, real, MeshType>
 
 public:
     /// Computes maximum residual error in each cell.
-    dealii::Vector<real> compute_cellwise_errors () override;
+    dealii::LinearAlgebra::distributed::Vector<real> compute_cellwise_errors () override;
 
     /// Constructor
     ExplicitErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input);
@@ -196,10 +196,10 @@ public:
      *  Uses DualWeightedResidualError::adjoint_fine and should only be called after fine_grid_adjoint().
      *  Eq(6) from Venditti and Darmafol (2000), cited above.
      */
-    dealii::Vector<real> dual_weighted_residual();
+    dealii::LinearAlgebra::distributed::Vector<real> dual_weighted_residual();
 
     /// Computes dual weighted residual error in each cell, by integrating over all quadrature points. Overwrites the virtual function in MeshErrorEstimateBase.
-    dealii::Vector<real> compute_cellwise_errors () override;
+    dealii::LinearAlgebra::distributed::Vector<real> compute_cellwise_errors () override;
 
     /// Computes the sum of dual weighted residual error over all the cells in the domain.
     real total_dual_weighted_residual_error();
@@ -209,7 +209,7 @@ public:
      *  related to the current adjoint state. Will also output DualWeightedResidualError::dual_weighted_residual_fine
      *  if currenly on the fine grid.
      */
-    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override {
+    void output_results_vtk(const unsigned int cycle, const dealii::LinearAlgebra::distributed::Vector<real> &cellwise_errors) override {
         MeshErrorEstimateBase<dim, real, MeshType>::output_results_vtk(cycle, cellwise_errors);
     }
     void output_results_vtk(const unsigned int cycle);
@@ -232,7 +232,7 @@ public:
     /// coarse grid adjoint (\f$\psi_H\f$)
     dealii::LinearAlgebra::distributed::Vector<real> adjoint_coarse;
     /// Dual weighted residual (\f$\eta\f) in each cell computed on the fine grid. 
-    dealii::Vector<real> dual_weighted_residual_fine;
+    dealii::LinearAlgebra::distributed::Vector<real> dual_weighted_residual_fine;
     
     /// Original FE_index distribution
     dealii::Vector<real> coarse_fe_index;
@@ -262,14 +262,17 @@ public:
     };
 
     /// Computes unsteady residual in each cell to be used as an error estimate.
-    dealii::Vector<real> compute_cellwise_errors () override;
+    dealii::LinearAlgebra::distributed::Vector<real> compute_cellwise_errors () override;
     /// original solution
     dealii::LinearAlgebra::distributed::Vector<real> solution_coarse;
     /// Current refinement state of the solution
     SolutionRefinementStateEnum solution_refinement_state;
      /// Original FE_index distribution
     dealii::Vector<real> coarse_fe_index;
-    dealii::Vector<real> unsteady_residual;
+
+    //dealii::LinearAlgebra::distributed::Vector<std::vector<real>> projected_residual;
+    dealii::LinearAlgebra::distributed::Vector<real> unsteady_residual;
+    //dealii::Vector<real> unsteady_residual;
 
 
 
@@ -297,7 +300,7 @@ public:
      */
     void fine_to_coarse();
 
-    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override;
+    void output_results_vtk(const unsigned int cycle, const dealii::LinearAlgebra::distributed::Vector<real> &cellwise_errors) override;
 
     /// Constructor
     /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.
