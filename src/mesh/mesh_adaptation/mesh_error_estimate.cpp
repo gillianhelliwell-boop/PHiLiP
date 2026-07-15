@@ -44,10 +44,10 @@ ResidualErrorEstimate<dim, real, MeshType> :: ResidualErrorEstimate(std::shared_
     {}
 
 template <int dim, typename real, typename MeshType>
-dealii::LinearAlgebra::distributed::Vector<real> ResidualErrorEstimate<dim, real, MeshType> :: compute_cellwise_errors()
+dealii::Vector<real> ResidualErrorEstimate<dim, real, MeshType> :: compute_cellwise_errors()
 {
     std::vector<dealii::types::global_dof_index> dofs_indices;
-    dealii::LinearAlgebra::distributed::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
+    dealii::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
     this->dg->assemble_residual();
 
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
@@ -84,7 +84,7 @@ LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_pt
 
 
 template <int dim, int nstate, typename real, typename MeshType>
-dealii::LinearAlgebra::distributed::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
+dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
     //the below code computes the unsteady residual of value epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
     //auto Q_p = this->dg->solution; //save original solution
@@ -94,13 +94,8 @@ dealii::LinearAlgebra::distributed::Vector<real> LESErrorEstimate<dim, nstate, r
     pcout<<"Residual is assembled..."<<std::endl;
 
     //required variables to calculate P_{p+1}[Res(Q_p)]
-    //std::vector<std::vector<real>> p_order_residual(this->dg->triangulation->n_active_cells());
+    std::vector<std::vector<real>> p_order_residual(this->dg->triangulation->n_active_cells());
     std::vector<std::vector<real>> projected_residual(this->dg->triangulation->n_active_cells());
-    //std::unordered_map<unsigned int, std::vector<real>> projected_residual;
-    //p_order_residual.reinit(this->dg->dof_handler.locally_owned_dofs(), this->dg->dof_handler.ghost_dofs(), MPI_COMM_WORLD);
-    //projected_residual.reinit(this->dg->dof_handler.locally_owned_dofs(), this->dg->dof_handler.ghost_dofs(), MPI_COMM_WORLD);
-    //std::vector<real> projected_residual;
-    
 
     //record average solution per state in each cell for normalization
     std::vector<real> sum_per_state(nstate, 0.0);
@@ -115,17 +110,16 @@ dealii::LinearAlgebra::distributed::Vector<real> LESErrorEstimate<dim, nstate, r
     {
         if(!cell->is_locally_owned())  continue;
         const unsigned int fe_index_curr_cell = cell->active_fe_index();
+
         //if (fe_index_curr_cell == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation) continue;
         const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
         const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
         current_dofs_indices.resize(n_dofs_curr_cell);
         cell->get_dof_indices(current_dofs_indices);
-
-        std::vector<real> p_order_residual(n_dofs_curr_cell);
-        //p_order_residual[cell->active_cell_index()].resize(n_dofs_curr_cell);   //resize vector of the active cell according to its number of DOFs
+        p_order_residual[cell->active_cell_index()].resize(n_dofs_curr_cell);   //resize vector of the active cell according to its number of DOFs
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
-            p_order_residual[idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
+            p_order_residual[cell->active_cell_index()][idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
             sum_per_state[(cell->get_fe().system_to_component_index(idof)).first] += std::abs(this->dg->solution[current_dofs_indices[idof]]); //calculate time average solution for normalization
         }
          
@@ -137,19 +131,17 @@ dealii::LinearAlgebra::distributed::Vector<real> LESErrorEstimate<dim, nstate, r
         const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell + 2); //notation is +2 to account for Gauss 2n-1 rule
         //std::vector<real> p_order_residual_per_cell = p_order_residual[cell->active_cell_index()];
 
-        projected_residual[cell->active_cell_index()] = project_function(p_order_residual, fe_input, fe_output, projection_quadrature); 
+        projected_residual[cell->active_cell_index()] = project_function(p_order_residual[cell->active_cell_index()], fe_input, fe_output, projection_quadrature); 
         
     }    
     //free p_order_residual to clear memory
-    //p_order_residual.clear();
-    //p_order_residual.shrink_to_fit();
+    p_order_residual.clear();
+    p_order_residual.shrink_to_fit();
     // add sum_per_state across all MPI ranks
     MPI_Allreduce(MPI_IN_PLACE, sum_per_state.data(), nstate, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
     //Project mesh to p+1 to compute Res(P_{p+1}[Q_p])
     //reinit(); //do we need this?? maybe for residual vector. remove
-
-
     convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
     pcout<<"Projected mesh to p+1..."<<std::endl;
     this->dg->assemble_residual(); //assemble residual of projected mesh
@@ -348,7 +340,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::fine_to_coarse()
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::LinearAlgebra::distributed::Vector<real> &cellwise_errors)
+void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors)
 {
     dealii::DataOut<dim, dealii::DoFHandler<dim>> data_out;
     data_out.attach_dof_handler(this->dg->dof_handler);
@@ -446,10 +438,10 @@ ExplicitErrorEstimate<dim, real, MeshType> :: ExplicitErrorEstimate(std::shared_
 
 
 template <int dim, typename real, typename MeshType>
-dealii::LinearAlgebra::distributed::Vector<real> ExplicitErrorEstimate<dim, real, MeshType> :: compute_cellwise_errors()
+dealii::Vector<real> ExplicitErrorEstimate<dim, real, MeshType> :: compute_cellwise_errors()
 {
     std::vector<dealii::types::global_dof_index> dofs_indices;
-    dealii::LinearAlgebra::distributed::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
+    dealii::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
     this->dg->assemble_residual();
 
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
@@ -496,15 +488,15 @@ DualWeightedResidualError<dim, nstate, real, MeshType>::DualWeightedResidualErro
 template <int dim, int nstate, typename real, typename MeshType>
 real DualWeightedResidualError<dim, nstate, real, MeshType>::total_dual_weighted_residual_error()
 {
-    dealii::LinearAlgebra::distributed::Vector<real> cellwise_errors = compute_cellwise_errors();
+    dealii::Vector<real> cellwise_errors = compute_cellwise_errors();
     real error_sum = cellwise_errors.l1_norm();
     return dealii::Utilities::MPI::sum(error_sum, mpi_communicator);
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-dealii::LinearAlgebra::distributed::Vector<real> DualWeightedResidualError<dim, nstate, real, MeshType>::compute_cellwise_errors()
+dealii::Vector<real> DualWeightedResidualError<dim, nstate, real, MeshType>::compute_cellwise_errors()
 {
-    dealii::LinearAlgebra::distributed::Vector<real> cellwise_errors(this->dg->triangulation->n_active_cells());
+    dealii::Vector<real> cellwise_errors(this->dg->triangulation->n_active_cells());
     reinit();
     convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
     pcout<<"Computing fine grid adjoint..."<<std::endl;
@@ -543,7 +535,7 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::reinit()
     adjoint_fine   = dealii::LinearAlgebra::distributed::Vector<real>();
     adjoint_coarse = dealii::LinearAlgebra::distributed::Vector<real>();
 
-    dual_weighted_residual_fine = dealii::LinearAlgebra::distributed::Vector<real>();
+    dual_weighted_residual_fine = dealii::Vector<real>();
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
@@ -707,7 +699,7 @@ dealii::LinearAlgebra::distributed::Vector<real> DualWeightedResidualError<dim, 
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-dealii::LinearAlgebra::distributed::Vector<real> DualWeightedResidualError<dim, nstate, real, MeshType>::dual_weighted_residual()
+dealii::Vector<real> DualWeightedResidualError<dim, nstate, real, MeshType>::dual_weighted_residual()
 {
     convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
 

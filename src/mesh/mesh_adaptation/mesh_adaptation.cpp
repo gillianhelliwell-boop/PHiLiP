@@ -62,7 +62,7 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
     }
 */
 
-    /*if constexpr(dim == 1 || !std::is_same<MeshType, dealii::parallel::distributed::Triangulation<dim>>::value) 
+    if constexpr(dim == 1 || !std::is_same<MeshType, dealii::parallel::distributed::Triangulation<dim>>::value) 
     {
         dealii::GridRefinement::refine_and_coarsen_fixed_number(*(dg->high_order_grid->triangulation),
                                                                 cellwise_errors,
@@ -75,7 +75,7 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
                                                                                         cellwise_errors,
                                                                                         mesh_adaptation_param->refine_fraction,
                                                                                         mesh_adaptation_param->h_coarsen_fraction);
-    } */
+    } 
     pcout<<"clue 3.2"<<std::endl;
     // ----------------------------------------
     // Mark the cells you want
@@ -85,49 +85,10 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
     if(mesh_adaptation_type == MeshAdaptationTypeEnum::h_adaptation){
         // Do nothing, cells are already flagged for h-adaptation
     } else if(mesh_adaptation_type == MeshAdaptationTypeEnum::p_adaptation){
-        /*dealii::hp::Refinement::p_adaptivity_from_absolute_threshold(dg->dof_handler,
+        dealii::hp::Refinement::p_adaptivity_from_absolute_threshold(dg->dof_handler,
                                                           cellwise_errors,
                                                           mesh_adaptation_param->refine_threshold_p,
-                                                          0.0);*/
-
-        // Assuming cellwise_errors is a dealii::LinearAlgebra::distributed::Vector<double>
-// partitioned by the locally owned active cell IndexSet.
-
-        const auto &fe_collection = dg->dof_handler.get_fe_collection();
-
-        for (const auto &cell : dg->dof_handler.active_cell_iterators())
-        {
-        // Only operate on cells owned by the current MPI rank
-        if (cell->is_locally_owned())
-        {
-            const unsigned int cell_idx = cell->active_cell_index();
-            const double error = cellwise_errors(cell_idx);
-
-            unsigned int current_fe_idx = cell->active_fe_index();
-            
-            if (error >= mesh_adaptation_param->refine_threshold_p)
-            {
-            // Elevate p (increment FE index if we haven't reached the max element in the collection)
-            if (current_fe_idx + 1 < fe_collection.size())
-                cell->set_future_fe_index(current_fe_idx + 1);
-            else
-                cell->set_future_fe_index(current_fe_idx);
-            }
-            else if (error <= 0.0) // using your coarsen threshold of 0.0 from the snippet
-            {
-            // Lower p (decrement FE index if we aren't already at the lowest)
-            if (current_fe_idx > 0)
-                cell->set_future_fe_index(current_fe_idx - 1);
-            else
-                cell->set_future_fe_index(current_fe_idx);
-            }
-            else
-            {
-            // Maintain current p
-            cell->set_future_fe_index(current_fe_idx);
-            }
-        }
-        }                                                  
+                                                          0.0);
         pcout<<"clue 3.3"<<std::endl;
         // If a cell is flagged for both h and p adaptation, perform only p adaptation.
         dealii::hp::Refinement::force_p_over_h(dg->dof_handler);
