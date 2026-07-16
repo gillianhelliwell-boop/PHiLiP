@@ -143,7 +143,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
     pcout<<"Projected mesh to p+1..."<<std::endl;
     this->dg->assemble_residual(); //assemble residual of projected mesh
-    unsteady_residual.reinit(this->dg->triangulation->n_active_cells());
+    dealii::Vector<real> unsteady_residual(this->dg->triangulation->n_active_cells());
 
     pcout<<"About to go through cell loop for error indicator..."<<std::endl;
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
@@ -159,12 +159,6 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
         current_dofs_indices.resize(n_dofs_curr_cell);
         cell->get_dof_indices(current_dofs_indices);
-
-        pcout << "cell " << cell->active_cell_index() 
-        << ": rhs[0]=" << this->dg->right_hand_side[current_dofs_indices[0]]
-        << ": proj[0]=" << projected_residual[cell->active_cell_index()][0]
-        << std::endl;
-
         // compute epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
         std::vector<real> residual_per_state_per_cell(nstate, 0.0);
 
@@ -264,6 +258,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
     locally_owned_dofs =  this->dg->dof_handler.locally_owned_dofs();
     dealii::DoFTools::extract_locally_relevant_dofs(this->dg->dof_handler, locally_relevant_dofs);
     pcout<<"locally_owned_dofs.size()="<<locally_owned_dofs.size()<<std::endl;
+    pcout<<"locally_relevant_dofs.size()="<<locally_relevant_dofs.size()<<std::endl;
     solution_coarse.update_ghost_values();
     
     // Solution Transfer to fine grid

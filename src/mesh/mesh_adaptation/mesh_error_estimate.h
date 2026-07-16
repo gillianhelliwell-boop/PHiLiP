@@ -269,7 +269,6 @@ public:
     SolutionRefinementStateEnum solution_refinement_state;
      /// Original FE_index distribution
     dealii::Vector<real> coarse_fe_index;
-    dealii::Vector<real> unsteady_residual;
 
 
 
