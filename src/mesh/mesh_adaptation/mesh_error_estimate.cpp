@@ -282,7 +282,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
     this->dg->triangulation->execute_coarsening_and_refinement();
     this->dg->high_order_grid->execute_coarsening_and_refinement();
 
-    this->dg->allocate_system();
+    this->dg->allocate_system(false, false, false);
     pcout<<"Allocated system for p+1"<<std::endl;
     this->dg->solution.zero_out_ghosts();
 
@@ -320,7 +320,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::fine_to_coarse()
     pcout<<"fine_to_coarse clue 3"<<std::endl;
     this->dg->high_order_grid->execute_coarsening_and_refinement();
     pcout<<"fine_to_coarse clue 4"<<std::endl;
-    this->dg->allocate_system();
+    this->dg->allocate_system(false, false, false);
     this->dg->solution.zero_out_ghosts();
 
     this->dg->solution = solution_coarse;
@@ -833,9 +833,11 @@ std::vector< real > project_function(
     const dealii::FESystem<dim,dim> &fe_output,
     const dealii::QGauss<dim> &projection_quadrature
     //,mpi_communicator(MPI_COMM_WORLD),
-    //pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
+    
     )
 {
+    dealii::ConditionalOStream pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
+    pcout<<"beginning of project_function"<<std::endl;
     const unsigned int nstate = fe_input.n_components();
     const unsigned int n_vector_dofs_in = fe_input.dofs_per_cell;
     const unsigned int n_vector_dofs_out = fe_output.dofs_per_cell;
@@ -849,6 +851,7 @@ std::vector< real > project_function(
     const std::vector<dealii::Point<dim,double>> &unit_quad_pts = projection_quadrature.get_points();
 
     std::vector< real > function_coeff_out(n_vector_dofs_out); // output function coefficients.
+    pcout<<"clue 1"<<std::endl;
     for (unsigned istate = 0; istate < nstate; ++istate) {
 
         std::vector< real > function_at_quad(n_quad_pts);
@@ -869,7 +872,7 @@ std::vector< real > project_function(
                 interpolation_operator[idof][iquad] = fe_output.shape_value_component(idof_vector,unit_quad_pts[iquad],istate);
             }
         }
-
+        pcout<<"clue 2"<<std::endl;
         std::vector< real > rhs(n_dofs_out);
         for (unsigned int idof=0; idof<n_dofs_out; ++idof) {
             rhs[idof] = 0.0;
@@ -878,13 +881,14 @@ std::vector< real > project_function(
             }
         }
         
-
+        pcout<<"clue 3"<<std::endl;
         dealii::FullMatrix<double> mass(n_dofs_out, n_dofs_out);
         for(unsigned int row=0; row<n_dofs_out; ++row) {
             for(unsigned int col=0; col<n_dofs_out; ++col) {
                 mass[row][col] = 0;
             }
         }
+        pcout<<"clue 4"<<std::endl;
         for(unsigned int row=0; row<n_dofs_out; ++row) {
             for(unsigned int col=0; col<n_dofs_out; ++col) {
                 for(unsigned int iquad=0; iquad<n_quad_pts; ++iquad) {
@@ -894,9 +898,15 @@ std::vector< real > project_function(
             }
         }
     
-
+        pcout<<"clue 5"<<std::endl;
         dealii::FullMatrix<double> inverse_mass(n_dofs_out, n_dofs_out);
+        pcout << "clue 6, n_dofs_out = " << n_dofs_out << std::endl;
+        //pcout << "mass diagonal check: ";
+        //for (unsigned int i = 0; i < n_dofs_out; ++i)
+           // pcout << mass[i][i] << " ";
+        //pcout << std::endl;
         inverse_mass.invert(mass);
+        pcout<<"clue 7"<<std::endl;
 
                 for(unsigned int row=0; row<n_dofs_out; ++row) {
                     const unsigned int idof_vector = fe_output.component_to_system_index(istate,row);
@@ -908,7 +918,7 @@ std::vector< real > project_function(
                     }
                 }
             }
-
+    pcout<<"end of project function"<<std::endl;
     return function_coeff_out;
 
 }

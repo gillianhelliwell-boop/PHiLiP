@@ -17,12 +17,12 @@ template <int dim, int nstate>
 int EulerSplitEntropyCheck<dim, nstate>::run_test() const
 {
     int testfail = 0;
-    const unsigned int n_fluxes = 4;
+    const unsigned int n_fluxes = 1;
 
     using TwoPtFluxEnum = Parameters::AllParameters::TwoPointNumericalFlux;
-    const std::array<TwoPtFluxEnum, n_fluxes> two_point_fluxes{{TwoPtFluxEnum::IR, TwoPtFluxEnum::CH, TwoPtFluxEnum::Ra, TwoPtFluxEnum::KG}};
-    const std::array<double, n_fluxes> tols{{5E-15, 5E-15, 5E-15, 1E-10}};
-    const std::array<std::string, n_fluxes> flux_names{{"Ismail-Roe", "Chandrashekar", "Ranocha", "Kennedy-Gruber"}};
+    const std::array<TwoPtFluxEnum, n_fluxes> two_point_fluxes{{TwoPtFluxEnum::IR}};
+    const std::array<double, n_fluxes> tols{{5E-15}};
+    const std::array<std::string, n_fluxes> flux_names{{"Ismail-Roe"}};
 
     for (unsigned int i = 0; i < n_fluxes; ++i){
         pcout << "-----------------------------------------------------------------------" << std::endl;

@@ -52,28 +52,19 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
     // ----------------------------------------
     // Clear any previous flags (important)
     // ----------------------------------------
-    /*for (const auto &cell : dg->dof_handler.active_cell_iterators())
-    {
-        if (cell->is_locally_owned())
-        {
-            cell->clear_refine_flag();
-            cell->clear_coarsen_flag();
-        }
-    }
-*/
 
     if constexpr(dim == 1 || !std::is_same<MeshType, dealii::parallel::distributed::Triangulation<dim>>::value) 
     {
         dealii::GridRefinement::refine_and_coarsen_fixed_number(*(dg->high_order_grid->triangulation),
                                                                 cellwise_errors,
-                                                                mesh_adaptation_param->refine_fraction,
+                                                                0.5,
                                                                 mesh_adaptation_param->h_coarsen_fraction);
     } 
     else 
     {
         dealii::parallel::distributed::GridRefinement::refine_and_coarsen_fixed_number(*(dg->high_order_grid->triangulation),
                                                                                         cellwise_errors,
-                                                                                        mesh_adaptation_param->refine_fraction,
+                                                                                        0.3,
                                                                                         mesh_adaptation_param->h_coarsen_fraction);
     } 
     pcout<<"clue 3.2"<<std::endl;
@@ -85,22 +76,34 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
     if(mesh_adaptation_type == MeshAdaptationTypeEnum::h_adaptation){
         // Do nothing, cells are already flagged for h-adaptation
     } else if(mesh_adaptation_type == MeshAdaptationTypeEnum::p_adaptation){
-        dealii::hp::Refinement::p_adaptivity_from_absolute_threshold(dg->dof_handler,
+        /*dealii::hp::Refinement::p_adaptivity_from_absolute_threshold(dg->dof_handler,
                                                           cellwise_errors,
                                                           mesh_adaptation_param->refine_threshold_p,
-                                                          0.0);
+                                                          0.0); */
+        dealii::hp::Refinement::p_adaptivity_fixed_number(dg->dof_handler, cellwise_errors, 0.5, 0.0);
         pcout<<"clue 3.3"<<std::endl;
         // If a cell is flagged for both h and p adaptation, perform only p adaptation.
         dealii::hp::Refinement::force_p_over_h(dg->dof_handler);
     } else if(mesh_adaptation_type == MeshAdaptationTypeEnum::hp_adaptation){
         smoothness_sensor_based_hp_refinement();
     }
+
+    unsigned int n_refine_flagged = 0, n_coarsen_flagged = 0, n_total = 0;
+    for (const auto &cell : dg->dof_handler.active_cell_iterators())
+        if (cell->is_locally_owned())
+        {
+            ++n_total;
+            if (cell->refine_flag_set()) ++n_refine_flagged;
+            if (cell->coarsen_flag_set()) ++n_coarsen_flagged;
+        }
+    pcout << n_refine_flagged << " / " << n_total << " flagged for refine, "
+        << n_coarsen_flagged << " flagged for coarsen" << std::endl;
 //=========================================================================================================================================================
     pcout<<"clue 3.4"<<std::endl;
     dg->high_order_grid->triangulation->execute_coarsening_and_refinement();
     dg->high_order_grid->execute_coarsening_and_refinement();
     pcout<<"clue 3.5"<<std::endl;
-    dg->allocate_system ();
+    dg->allocate_system (false, false, false);
     pcout<<"clue 3.6"<<std::endl;
     dg->solution.zero_out_ghosts();
     solution_transfer.interpolate(dg->solution);
