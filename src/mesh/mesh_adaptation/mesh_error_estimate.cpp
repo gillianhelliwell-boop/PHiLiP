@@ -111,7 +111,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         if(!cell->is_locally_owned())  continue;
         const unsigned int fe_index_curr_cell = cell->active_fe_index();
 
-        //if (fe_index_curr_cell == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation) continue;
+        if ((fe_index_curr_cell+1) == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation) continue;
         const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
         const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
         current_dofs_indices.resize(n_dofs_curr_cell);
@@ -149,8 +149,12 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if(!cell->is_locally_owned())  continue;
-        
         const unsigned int fe_index_curr_cell = cell->active_fe_index();
+        if ((fe_index_curr_cell+1) == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation)
+        {   unsteady_residual[cell->active_cell_index()]= 0.0;
+            continue; }
+        
+
         const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
         const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
         // check sizes are consistent

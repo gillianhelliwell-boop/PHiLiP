@@ -75,19 +75,22 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
 
     if(mesh_adaptation_type == MeshAdaptationTypeEnum::h_adaptation){
         // Do nothing, cells are already flagged for h-adaptation
+
     } else if(mesh_adaptation_type == MeshAdaptationTypeEnum::p_adaptation){
-        /*dealii::hp::Refinement::p_adaptivity_from_absolute_threshold(dg->dof_handler,
+        dealii::hp::Refinement::p_adaptivity_from_absolute_threshold(dg->dof_handler,
                                                           cellwise_errors,
                                                           mesh_adaptation_param->refine_threshold_p,
-                                                          0.0); */
-        dealii::hp::Refinement::p_adaptivity_fixed_number(dg->dof_handler, cellwise_errors, 0.5, 0.0);
+                                                          0.0); 
+        //dealii::hp::Refinement::p_adaptivity_from_relative_threshold(dg->dof_handler, cellwise_errors, 1.0, mesh_adaptation_param->coarsen_threshold_p);
         pcout<<"clue 3.3"<<std::endl;
         // If a cell is flagged for both h and p adaptation, perform only p adaptation.
         dealii::hp::Refinement::force_p_over_h(dg->dof_handler);
+
     } else if(mesh_adaptation_type == MeshAdaptationTypeEnum::hp_adaptation){
         smoothness_sensor_based_hp_refinement();
     }
-
+    //dg->high_order_grid->triangulation->prepare_coarsening_and_refinement(); //ensures 2:1 mesh balance for h-adaptation
+    //dealii::hp::Refinement::limit_p_level_difference(dg->dof_handler); //ensures p-order difference between neighbouring cells is limited to 1
     unsigned int n_refine_flagged = 0, n_coarsen_flagged = 0, n_total = 0;
     for (const auto &cell : dg->dof_handler.active_cell_iterators())
         if (cell->is_locally_owned())
