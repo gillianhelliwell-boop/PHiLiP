@@ -23,8 +23,14 @@ public:
     /// Total/maximum number of mesh adaptation cycles while solving a problem.
     int total_mesh_adaptation_cycles;
 
-    //Threshold of error for p-adaptation
-    double p_refine_threshold;
+    // Number of time steps between adaptation cycles
+    int time_steps_between_adaptation_cycles;
+
+    // Start time of mesh adaptation
+    double mesh_adaptation_start_time;
+
+    // End time of mesh adaptation
+    double mesh_adaptation_end_time;
     
     /// Fraction of cells to be h or p-refined
     double refine_fraction;

@@ -572,7 +572,11 @@ int FlowSolver<dim,nstate>::run() const
             ode_solver->step_in_time(time_step,false); // pseudotime==false
 
 
-            if(this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles > 0 && ode_solver->current_iteration % 100 == 0 && ode_solver->current_iteration > 1){
+            if(this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles > 0 && 
+                ode_solver->current_iteration % this->all_param.mesh_adaptation_param.time_steps_between_adaptation_cycles == 0 && 
+                ode_solver->current_iteration > 1 &&
+                this->all_param.mesh_adaptation_param.mesh_adaptation_end_time > ode_solver->current_time &&
+                ode_solver->current_time > this->all_param.mesh_adaptation_param.mesh_adaptation_start_time){
                 pcout << "\nPerforming explicit mesh adaptation..." << std::endl;
                 perform_explicit_mesh_adaptation();
                 pcout << "Mesh adaptation completed.\n" << std::endl;

@@ -48,50 +48,58 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
     dealii::parallel::distributed::SolutionTransfer<dim, dealii::LinearAlgebra::distributed::Vector<real>, dealii::DoFHandler<dim>> solution_transfer(dg->dof_handler);
     solution_transfer.prepare_for_coarsening_and_refinement(old_solution);
     dg->high_order_grid->prepare_for_coarsening_and_refinement();
-    pcout<<"clue 3.1"<<std::endl;
-    // ----------------------------------------
-    // Clear any previous flags (important)
-    // ----------------------------------------
 
     if constexpr(dim == 1 || !std::is_same<MeshType, dealii::parallel::distributed::Triangulation<dim>>::value) 
     {
         dealii::GridRefinement::refine_and_coarsen_fixed_number(*(dg->high_order_grid->triangulation),
                                                                 cellwise_errors,
-                                                                0.5,
+                                                                mesh_adaptation_param->refine_fraction,
                                                                 mesh_adaptation_param->h_coarsen_fraction);
     } 
     else 
     {
         dealii::parallel::distributed::GridRefinement::refine_and_coarsen_fixed_number(*(dg->high_order_grid->triangulation),
                                                                                         cellwise_errors,
-                                                                                        0.3,
+                                                                                        mesh_adaptation_param->refine_fraction,
                                                                                         mesh_adaptation_param->h_coarsen_fraction);
     } 
-    pcout<<"clue 3.2"<<std::endl;
     // ----------------------------------------
     // Mark the cells you want
     // ----------------------------------------
     //mark_airfoil_layers(dg->dof_handler);
+    auto dump_cell = [&](const std::string &label){
+    for (const auto &cell : dg->dof_handler.active_cell_iterators())
+        if (cell->is_locally_owned() && (cell->refine_flag_set() && cell->future_fe_index_set()))
+            pcout << label << ": cell " << cell->id().to_string()
+                  << " has BOTH refine_flag and future_fe_index="
+                  << cell->future_fe_index() << std::endl;
+    };
+
 
     if(mesh_adaptation_type == MeshAdaptationTypeEnum::h_adaptation){
         // Do nothing, cells are already flagged for h-adaptation
 
     } else if(mesh_adaptation_type == MeshAdaptationTypeEnum::p_adaptation){
-        dealii::hp::Refinement::p_adaptivity_from_absolute_threshold(dg->dof_handler,
+        /*dealii::hp::Refinement::p_adaptivity_from_absolute_threshold(dg->dof_handler,
                                                           cellwise_errors,
                                                           mesh_adaptation_param->refine_threshold_p,
-                                                          0.0); 
+                                                          0.0); */
+        dealii::hp::Refinement::p_adaptivity_fixed_number(dg->dof_handler,
+                                                          cellwise_errors,
+                                                          mesh_adaptation_param->refine_threshold_p,
+                                                          mesh_adaptation_param->coarsen_threshold_p);       
+        dump_cell("after p_adaptivity");                         
         //dealii::hp::Refinement::p_adaptivity_from_relative_threshold(dg->dof_handler, cellwise_errors, 1.0, mesh_adaptation_param->coarsen_threshold_p);
-        pcout<<"clue 3.3"<<std::endl;
         // If a cell is flagged for both h and p adaptation, perform only p adaptation.
         dealii::hp::Refinement::force_p_over_h(dg->dof_handler);
+        dump_cell("after force_p_over_h");
 
     } else if(mesh_adaptation_type == MeshAdaptationTypeEnum::hp_adaptation){
         smoothness_sensor_based_hp_refinement();
     }
-    //dg->high_order_grid->triangulation->prepare_coarsening_and_refinement(); //ensures 2:1 mesh balance for h-adaptation
-    //dealii::hp::Refinement::limit_p_level_difference(dg->dof_handler); //ensures p-order difference between neighbouring cells is limited to 1
+    dg->high_order_grid->triangulation->prepare_coarsening_and_refinement(); //ensures 2:1 mesh balance for h-adaptation
     unsigned int n_refine_flagged = 0, n_coarsen_flagged = 0, n_total = 0;
+    MPI_Comm comm = MPI_COMM_WORLD;
     for (const auto &cell : dg->dof_handler.active_cell_iterators())
         if (cell->is_locally_owned())
         {
@@ -99,21 +107,31 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
             if (cell->refine_flag_set()) ++n_refine_flagged;
             if (cell->coarsen_flag_set()) ++n_coarsen_flagged;
         }
-    pcout << n_refine_flagged << " / " << n_total << " flagged for refine, "
-        << n_coarsen_flagged << " flagged for coarsen" << std::endl;
+    
+    pcout << dealii::Utilities::MPI::sum(n_refine_flagged, comm) << " / " << dealii::Utilities::MPI::sum(n_total, comm) << " flagged for refine, "
+    << dealii::Utilities::MPI::sum(n_coarsen_flagged, comm) << " flagged for coarsen" << std::endl;
+    
 //=========================================================================================================================================================
-    pcout<<"clue 3.4"<<std::endl;
+    dump_cell("right before execute_coarsening_and_refinement");
+    unsigned int h_only = 0, p_only = 0, neither = 0;
+    for (const auto &cell : dg->dof_handler.active_cell_iterators())
+        if (cell->is_locally_owned())
+        {
+            bool h = cell->refine_flag_set() || cell->coarsen_flag_set();
+            bool p = cell->future_fe_index_set();
+            if (h && !p) ++h_only;
+            else if (p && !h) ++p_only;
+            else if (!h && !p) ++neither;
+        }
+    pcout << "h_only=" << h_only << " p_only=" << p_only << " neither=" << neither 
+        << " / total=" << n_total << std::endl;
     dg->high_order_grid->triangulation->execute_coarsening_and_refinement();
     dg->high_order_grid->execute_coarsening_and_refinement();
-    pcout<<"clue 3.5"<<std::endl;
     dg->allocate_system (false, false, false);
-    pcout<<"clue 3.6"<<std::endl;
     dg->solution.zero_out_ghosts();
     solution_transfer.interpolate(dg->solution);
     dg->solution.update_ghost_values();
-    pcout<<"clue 3.7"<<std::endl;
     dg->assemble_residual (); //why do we need to do this?
-    pcout<<"clue 3.8"<<std::endl;
 }
 
 template <int dim, typename real, typename MeshType>
@@ -276,100 +294,6 @@ void MeshAdaptation<dim,real,MeshType>::mark_airfoil_layers(dealii::DoFHandler<d
         else
             cell->clear_refine_flag(); // optional safety
     }
-
-    // // -----------------------------
-    // // Pass 1: mark boundary cells
-    // // -----------------------------
-    // std::set<Cell> boundary_cells;
-    // std::set<Cell> second_layer_cells;
-
-    // for (const auto &cell : dof_handler.active_cell_iterators())
-    // {
-    //     if (!cell->is_locally_owned())
-    //         continue;
-
-    //     for (unsigned int f = 0; f < dealii::GeometryInfo<dim>::faces_per_cell; ++f)
-    //     {
-    //         const auto face = cell->face(f);
-
-    //         if (face->at_boundary() && face->boundary_id() == 1001)
-    //         {
-    //             cell->set_user_flag();
-    //             cell->set_refine_flag();
-    //             // boundary_cells.insert(cell);
-    //             // break;
-    //         }
-    //     }
-    // }
-
-    // // -----------------------------
-    // // Pass 2: mark neighbors
-    // // -----------------------------
-    // //std::set<typename Cell::active_cell_index_type> second_layer_cells;
-
-    // for (const auto &cell : dof_handler.active_cell_iterators())
-    // {
-    //     if (!cell->is_locally_owned())
-    //         continue;
-
-    //     if (!cell->user_flag_set())
-    //     {
-    //         for (unsigned int f = 0; f < dealii::GeometryInfo<dim>::faces_per_cell; ++f)
-    //         {
-    //             if (cell->at_boundary(f)) continue;
-
-    //             const auto neighbor = cell->neighbor(f);
-
-    //             if (neighbor->is_locally_owned() || neighbor->is_ghost())
-    //             {
-    //                 if (neighbor->user_flag_set())
-    //                 {
-    //                     cell->set_refine_flag();
-    //                     break;
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     // // Skip already marked boundary cells
-    //     // if (boundary_cells.count(cell))
-    //     //     continue;
-
-    //     // for (unsigned int iface = 0; iface < dealii::GeometryInfo<dim>::faces_per_cell; ++iface)
-    //     // {
-    //     //     if (cell->at_boundary(iface))
-    //     //         continue;
-
-    //     //     //neighbor is boundary cell
-    //     //     const auto neighbor = cell->neighbor(iface);
-
-    //     //     // Only check if neighbor is accessible (ghost or local)
-    //     //     if ((neighbor->is_locally_owned() || neighbor->is_ghost())) //&& neighbor_face->at_boundary())
-    //     //     {
-    //     //         if (boundary_cells.count(neighbor))
-    //     //         {
-    //     //             second_layer_cells.insert(cell);
-    //     //             break;
-    //     //         }
-    //     //     }
-    //     // }
-    // }
-
-    // // -----------------------------
-    // // Apply refinement flags
-    // // -----------------------------
-    // for (const auto &cell : dof_handler.active_cell_iterators())
-    // {
-    //     // if (!cell->is_locally_owned())
-    //     //     continue;
-
-    //     // const auto idx = cell->active_cell_index();
-
-    //     // if (boundary_cells.count(cell) || second_layer_cells.count(cell))
-    //     // {
-    //     //     cell->set_refine_flag();
-    //     // }
-    //     cell->clear_user_flag();
-    // }
 
     unsigned int local_count = 0;
     //unsigned int global_count = local_count;
