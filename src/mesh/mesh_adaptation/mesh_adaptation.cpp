@@ -49,6 +49,8 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
     solution_transfer.prepare_for_coarsening_and_refinement(old_solution);
     dg->high_order_grid->prepare_for_coarsening_and_refinement();
 
+    
+
     if constexpr(dim == 1 || !std::is_same<MeshType, dealii::parallel::distributed::Triangulation<dim>>::value) 
     {
         dealii::GridRefinement::refine_and_coarsen_fixed_number(*(dg->high_order_grid->triangulation),

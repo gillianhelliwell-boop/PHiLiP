@@ -411,13 +411,14 @@ template <int dim, int nstate>
 void FlowSolver<dim,nstate>::perform_explicit_mesh_adaptation() const
 {
     std::unique_ptr<MeshAdaptation<dim,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,double>>(this->dg, &(this->all_param.mesh_adaptation_param));
-    const int total_adaptation_cycles = this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles;
+    //const int total_adaptation_cycles = this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles;
     
     pcout<<"Running mesh adaptation cycles..."<<std::endl;
-    while (meshadaptation->current_mesh_adaptation_cycle < total_adaptation_cycles)
+    /*while (meshadaptation->current_mesh_adaptation_cycle < total_adaptation_cycles)
     {
         meshadaptation->adapt_mesh();
-    }
+    } */
+    meshadaptation->adapt_mesh();
     ode_solver->allocate_ode_system();
     pcout<<"Finished running mesh adaptation cycles."<<std::endl; 
     //meshadaptation->mesh_error->output_results_vtk(ode_solver->current_iteration, meshadaptation->get_cellwise_errors());
@@ -549,6 +550,8 @@ int FlowSolver<dim,nstate>::run() const
         pcout << "Timer starting. " << std::endl;
         dealii::Timer timer(this->mpi_communicator,false);
         timer.start();
+
+        int mesh_adaptation_cycles_completed = 0; //record mesh adaptation cycles
         while(ode_solver->current_time < final_time)
         {
             time_step = next_time_step; // update time step
@@ -572,13 +575,16 @@ int FlowSolver<dim,nstate>::run() const
             ode_solver->step_in_time(time_step,false); // pseudotime==false
 
 
-            if(this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles > 0 && 
+            if(this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles > mesh_adaptation_cycles_completed && 
                 ode_solver->current_iteration % this->all_param.mesh_adaptation_param.time_steps_between_adaptation_cycles == 0 && 
                 ode_solver->current_iteration > 1 &&
                 this->all_param.mesh_adaptation_param.mesh_adaptation_end_time > ode_solver->current_time &&
-                ode_solver->current_time > this->all_param.mesh_adaptation_param.mesh_adaptation_start_time){
+                ode_solver->current_time > this->all_param.mesh_adaptation_param.mesh_adaptation_start_time)
+                //SHOULD I ADD A CONDITION ABOUT use_LES_mesh_adaptation??
+                {
                 pcout << "\nPerforming explicit mesh adaptation..." << std::endl;
                 perform_explicit_mesh_adaptation();
+                mesh_adaptation_cycles_completed++;
                 pcout << "Mesh adaptation completed.\n" << std::endl;
             }
 
