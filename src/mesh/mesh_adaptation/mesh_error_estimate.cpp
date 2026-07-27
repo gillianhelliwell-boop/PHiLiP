@@ -193,7 +193,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         real residual_mass = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
         real residual_energy = residual_per_state_per_cell[(nstate - 1)]*dofs_per_state/sum_per_state[(nstate - 1)];
         //unsteady_residual[cell->active_cell_index()] = residual_mass + (total_residual_momentum*dofs_momentum/sum_momentum) + residual_energy;
-        unsteady_residual[cell->active_cell_index()] = residual_mass
+        unsteady_residual[cell->active_cell_index()] = residual_mass;
         pcout<<"residual mass: "<<residual_mass<<"; residual momentum: "<<(total_residual_momentum*dofs_momentum/sum_momentum)<<"; residual energy: "<<residual_energy<<std::endl;
         pcout<<"UNSTEADY RESIDUAL: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
     }
