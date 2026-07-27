@@ -174,20 +174,27 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         }
         
         //normalize the solution at each state
-        real residual_momentum = 0.0;
+        real total_residual_momentum = 0.0;
         real dofs_momentum = 0;
+        real sum_momentum = 0.0;
+
+        for (unsigned int state = 1; state < (nstate-1); ++state)
+        {
+            sum_momentum += sum_per_state[state];
+        }
 
         //combine residual of all momentum states
         for (unsigned int state = 1; state < (nstate-1); ++state)
         {
             if (sum_per_state[state] < 1e-10) continue; //eliminate threat of division by zero
-            residual_momentum += (residual_per_state_per_cell[state]/sum_per_state[state]);
+            total_residual_momentum += residual_per_state_per_cell[state];
             dofs_momentum += dofs_per_state;
         }
         real residual_mass = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
         real residual_energy = residual_per_state_per_cell[(nstate - 1)]*dofs_per_state/sum_per_state[(nstate - 1)];
-        unsteady_residual[cell->active_cell_index()] = residual_mass + (residual_momentum/dofs_momentum) + residual_energy;
-        pcout<<"residual mass: "<<residual_mass<<"; residual momentum: "<<(residual_momentum/dofs_momentum)<<"; residual energy: "<<residual_energy<<std::endl;
+        //unsteady_residual[cell->active_cell_index()] = residual_mass + (total_residual_momentum*dofs_momentum/sum_momentum) + residual_energy;
+        unsteady_residual[cell->active_cell_index()] = residual_mass
+        pcout<<"residual mass: "<<residual_mass<<"; residual momentum: "<<(total_residual_momentum*dofs_momentum/sum_momentum)<<"; residual energy: "<<residual_energy<<std::endl;
         pcout<<"UNSTEADY RESIDUAL: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
     }
     pcout<<"end of error estimation cell loop..."<<std::endl;
