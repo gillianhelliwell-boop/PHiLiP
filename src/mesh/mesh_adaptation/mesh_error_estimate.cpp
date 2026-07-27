@@ -90,7 +90,6 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     //auto Q_p = this->dg->solution; //save original solution
     //compute residual at p+1
     reinit();
-    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
     this->dg->assemble_residual();
 
     //required variables to calculate P_{p+1}[Res(Q_p)]
@@ -139,6 +138,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
     //Project mesh to p+1 to compute Res(P_{p+1}[Q_p])
     //reinit(); //do we need this?? maybe for residual vector. remove
+    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
     this->dg->assemble_residual(); //assemble residual of projected mesh
     dealii::Vector<real> unsteady_residual(this->dg->triangulation->n_active_cells());
 
