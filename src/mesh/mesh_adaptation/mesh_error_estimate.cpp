@@ -90,8 +90,8 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     //auto Q_p = this->dg->solution; //save original solution
     //compute residual at p+1
     reinit();
+    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
     this->dg->assemble_residual();
-    pcout<<"Residual is assembled..."<<std::endl;
 
     //required variables to calculate P_{p+1}[Res(Q_p)]
     //std::vector<std::vector<real>> p_order_residual(this->dg->triangulation->n_active_cells());
@@ -103,7 +103,6 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
-    pcout<<"About to go through cell loop..."<<std::endl;
 
     // cell loop to project the residual to p+1 and obtain P_{p+1}[Res(Q_p)]
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
@@ -140,11 +139,10 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
     //Project mesh to p+1 to compute Res(P_{p+1}[Q_p])
     //reinit(); //do we need this?? maybe for residual vector. remove
-    pcout<<"Projected mesh to p+1..."<<std::endl;
     this->dg->assemble_residual(); //assemble residual of projected mesh
     dealii::Vector<real> unsteady_residual(this->dg->triangulation->n_active_cells());
 
-    pcout<<"About to go through cell loop for error indicator..."<<std::endl;
+    
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if(!cell->is_locally_owned())  continue;
@@ -174,33 +172,40 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         }
         
         //normalize the solution at each state
-        real total_residual_momentum = 0.0;
-        real dofs_momentum = 0;
-        real sum_momentum = 0.0;
-
-        for (unsigned int state = 1; state < (nstate-1); ++state)
+        //real total_residual_momentum = 0.0;
+        //real dofs_momentum = 0;
+        //real sum_momentum = 0.0;
+      
+        /*for (unsigned int state = 1; state < (nstate-3); ++state)
         {
             sum_momentum += sum_per_state[state];
         }
 
         //combine residual of all momentum states
-        for (unsigned int state = 1; state < (nstate-1); ++state)
+        for (unsigned int state = 1; state < (nstate-3); ++state)
         {
-            if (sum_per_state[state] < 1e-10) continue; //eliminate threat of division by zero
             total_residual_momentum += residual_per_state_per_cell[state];
             dofs_momentum += dofs_per_state;
-        }
-        real residual_mass = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
-        real residual_energy = residual_per_state_per_cell[(nstate - 1)]*dofs_per_state/sum_per_state[(nstate - 1)];
+        } */
+        //real residual_mass = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
+        //real residual_energy = residual_per_state_per_cell[(nstate - 1)]*dofs_per_state/sum_per_state[(nstate - 1)];
+    
         //unsteady_residual[cell->active_cell_index()] = residual_mass + (total_residual_momentum*dofs_momentum/sum_momentum) + residual_energy;
-        unsteady_residual[cell->active_cell_index()] = residual_mass;
-        pcout<<"residual mass: "<<residual_mass<<"; residual momentum: "<<(total_residual_momentum*dofs_momentum/sum_momentum)<<"; residual energy: "<<residual_energy<<std::endl;
-        pcout<<"UNSTEADY RESIDUAL: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
+        real residual_x_momentum = 0.0;
+        if (nstate > 1)
+        {   residual_x_momentum = residual_per_state_per_cell[1]*dofs_per_state/sum_per_state[1];
+        }
+        else {
+            residual_x_momentum = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
+        }
+        unsteady_residual[cell->active_cell_index()] = residual_x_momentum;
+        //pcout<<"residual mass: "<<residual_mass<<"; residual momentum: "<<(total_residual_momentum*dofs_momentum/sum_momentum)<<"; residual energy: "<<residual_energy<<std::endl;
+        //pcout<<"UNSTEADY RESIDUAL: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
     }
-    pcout<<"end of error estimation cell loop..."<<std::endl;
+    
     
     convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh TURNED OFF FOR TROUBLESHOOTING
-    pcout<<"Restored mesh to coarse..."<<std::endl;
+
     //this->dg->solution = Q_p; //restore solution vector 
     return unsteady_residual;
 }
@@ -229,8 +234,8 @@ template <int dim, int nstate, typename real, typename MeshType>
 void LESErrorEstimate<dim, nstate, real, MeshType>::convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum required_refinement_state)
 {   
     // checks if conversion is needed
-    pcout<<"SolutionRefinementStateEnum: "<<solution_refinement_state<<std::endl;
-    pcout<<"Required refinement state: "<<required_refinement_state<<std::endl;
+    //pcout<<"SolutionRefinementStateEnum: "<<solution_refinement_state<<std::endl;
+    //pcout<<"Required refinement state: "<<required_refinement_state<<std::endl;
     if(solution_refinement_state == required_refinement_state)
     {
         return;
@@ -267,8 +272,8 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
     dealii::IndexSet locally_owned_dofs, locally_relevant_dofs;
     locally_owned_dofs =  this->dg->dof_handler.locally_owned_dofs();
     dealii::DoFTools::extract_locally_relevant_dofs(this->dg->dof_handler, locally_relevant_dofs);
-    pcout<<"locally_owned_dofs.size()="<<locally_owned_dofs.size()<<std::endl;
-    pcout<<"locally_relevant_dofs.size()="<<locally_relevant_dofs.size()<<std::endl;
+    //pcout<<"locally_owned_dofs.size()="<<locally_owned_dofs.size()<<std::endl;
+   // pcout<<"locally_relevant_dofs.size()="<<locally_relevant_dofs.size()<<std::endl;
     solution_coarse.update_ghost_values();
     
     // Solution Transfer to fine grid
@@ -280,7 +285,6 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
     solution_transfer.prepare_for_coarsening_and_refinement(solution_coarse);
 
     this->dg->high_order_grid->prepare_for_coarsening_and_refinement();
-    pcout<<"Prepared for coarsening and refinement..."<<std::endl;
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if (cell->is_locally_owned()) 
@@ -293,7 +297,6 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
     this->dg->high_order_grid->execute_coarsening_and_refinement();
 
     this->dg->allocate_system(false, false, false);
-    pcout<<"Allocated system for p+1"<<std::endl;
     this->dg->solution.zero_out_ghosts();
 
     if constexpr (std::is_same_v<typename dealii::SolutionTransfer<dim,VectorType,DoFHandlerType>, 
@@ -317,7 +320,6 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::fine_to_coarse()
 {
     [[maybe_unused]] unsigned int no_of_cells_before_changing_p = this->dg->triangulation->n_active_cells(); // Used in assert (i.e remains unused in Release mode).
     this->dg->high_order_grid->prepare_for_coarsening_and_refinement();
-    pcout<<"fine_to_coarse clue 1"<<std::endl;
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if (cell->is_locally_owned()) 
@@ -325,11 +327,8 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::fine_to_coarse()
             cell->set_future_fe_index(coarse_fe_index[cell->active_cell_index()]);
         }
     }
-    pcout<<"fine_to_coarse clue 2"<<std::endl;
     this->dg->triangulation->execute_coarsening_and_refinement();
-    pcout<<"fine_to_coarse clue 3"<<std::endl;
     this->dg->high_order_grid->execute_coarsening_and_refinement();
-    pcout<<"fine_to_coarse clue 4"<<std::endl;
     this->dg->allocate_system(false, false, false);
     this->dg->solution.zero_out_ghosts();
 
@@ -847,7 +846,6 @@ std::vector< real > project_function(
     )
 {
     dealii::ConditionalOStream pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
-    pcout<<"beginning of project_function"<<std::endl;
     const unsigned int nstate = fe_input.n_components();
     const unsigned int n_vector_dofs_in = fe_input.dofs_per_cell;
     const unsigned int n_vector_dofs_out = fe_output.dofs_per_cell;
@@ -905,7 +903,7 @@ std::vector< real > project_function(
         }
     
         dealii::FullMatrix<double> inverse_mass(n_dofs_out, n_dofs_out);
-        pcout << "n_dofs_out = " << n_dofs_out << std::endl;
+        //pcout << "n_dofs_out = " << n_dofs_out << std::endl;
         //pcout << "mass diagonal check: ";
         //for (unsigned int i = 0; i < n_dofs_out; ++i)
            // pcout << mass[i][i] << " ";
