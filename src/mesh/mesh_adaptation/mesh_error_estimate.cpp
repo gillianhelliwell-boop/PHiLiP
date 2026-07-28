@@ -74,10 +74,11 @@ dealii::Vector<real> ResidualErrorEstimate<dim, real, MeshType> :: compute_cellw
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input)
+LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
     : MeshErrorEstimateBase<dim, real, MeshType> (dg_input)
     , solution_coarse(this->dg->solution)
     , solution_refinement_state(SolutionRefinementStateEnum::coarse)
+    , mesh_adaptation_param(mesh_adaptation_param_input)
     , mpi_communicator(MPI_COMM_WORLD)
     , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
     {}
@@ -124,7 +125,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
          
         //gather inputs for project_function(), and then project the rhs of active cell to p+1
         const int poly_degree = cell->active_fe_index();
-        pcout <<"current cell: "<<cell->active_cell_index()<< "poly_degree: " << static_cast<unsigned int>(poly_degree) << std::endl;
+        //out <<"current cell: "<<cell->active_cell_index()<< "poly_degree: " << static_cast<unsigned int>(poly_degree) << std::endl;
         const dealii::FESystem<dim,dim> &fe_input = this->dg->fe_collection[poly_degree];
         const dealii::FESystem<dim,dim> &fe_output = this->dg->fe_collection[poly_degree + 1];  
         const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell + 2); //notation is +2 to account for Gauss 2n-1 rule
@@ -172,33 +173,53 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         }
         
         //normalize the solution at each state
-        //real total_residual_momentum = 0.0;
-        //real dofs_momentum = 0;
-        //real sum_momentum = 0.0;
+        real total_residual_momentum = 0.0;
+        real dofs_momentum = 0;
+        real sum_momentum = 0.0;
       
-        /*for (unsigned int state = 1; state < (nstate-3); ++state)
+        for (unsigned int state = 1; state < (nstate-1); ++state)
         {
             sum_momentum += sum_per_state[state];
         }
 
         //combine residual of all momentum states
-        for (unsigned int state = 1; state < (nstate-3); ++state)
+        for (unsigned int state = 1; state < (nstate-1); ++state)
         {
             total_residual_momentum += residual_per_state_per_cell[state];
             dofs_momentum += dofs_per_state;
-        } */
-        //real residual_mass = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
-        //real residual_energy = residual_per_state_per_cell[(nstate - 1)]*dofs_per_state/sum_per_state[(nstate - 1)];
+        } 
+        real residual_mass = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
+        real residual_energy = residual_per_state_per_cell[(nstate - 1)]*dofs_per_state/sum_per_state[(nstate - 1)];
     
         //unsteady_residual[cell->active_cell_index()] = residual_mass + (total_residual_momentum*dofs_momentum/sum_momentum) + residual_energy;
-        real residual_x_momentum = 0.0;
+        const auto state = this->mesh_adaptation_param->indicator_state;
         if (nstate > 1)
-        {   residual_x_momentum = residual_per_state_per_cell[1]*dofs_per_state/sum_per_state[1];
+        {   
+            if (state == Parameters::MeshAdaptationParam::x_momentum)
+                {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[1]*dofs_per_state/sum_per_state[1];}
+
+            else if (state == Parameters::MeshAdaptationParam::all)
+                {unsteady_residual[cell->active_cell_index()] = residual_mass + (total_residual_momentum*dofs_momentum/sum_momentum) + residual_energy;}
+            else if (state == Parameters::MeshAdaptationParam::energy)
+                {unsteady_residual[cell->active_cell_index()] = residual_energy;}
+            else if (state == Parameters::MeshAdaptationParam::mass)
+                {unsteady_residual[cell->active_cell_index()] = residual_mass;}
+            else if (state == Parameters::MeshAdaptationParam::y_momentum)
+                {if (nstate > 2)
+                    {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[2]*dofs_per_state/sum_per_state[2];}}
+            else if (state == Parameters::MeshAdaptationParam::x_y_momentum)
+                {if (nstate > 2)
+                    {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[1]*dofs_per_state/sum_per_state[1] + residual_per_state_per_cell[2]*dofs_per_state/sum_per_state[2];}}
+            else if (state == Parameters::MeshAdaptationParam::z_momentum)
+                {if (nstate > 3)
+                    {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[3]*dofs_per_state/sum_per_state[3];}}
+            else if (state == Parameters::MeshAdaptationParam::momentum)
+                {unsteady_residual[cell->active_cell_index()] = total_residual_momentum*dofs_momentum/sum_momentum;}
         }
         else {
-            residual_x_momentum = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
+            unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
         }
-        unsteady_residual[cell->active_cell_index()] = residual_x_momentum;
+ 
         //pcout<<"residual mass: "<<residual_mass<<"; residual momentum: "<<(total_residual_momentum*dofs_momentum/sum_momentum)<<"; residual energy: "<<residual_energy<<std::endl;
         //pcout<<"UNSTEADY RESIDUAL: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
     }
@@ -920,7 +941,7 @@ std::vector< real > project_function(
                     }
                 }
             }
-    pcout<<"end of project function"<<std::endl;
+
     return function_coeff_out;
 
 }

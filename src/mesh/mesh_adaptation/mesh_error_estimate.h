@@ -303,7 +303,8 @@ public:
      *  Also stores the current solution and distribution of polynomial orders
      *  for the mesh for converting back to coarse state after refinement.
     */
-    LESErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input);
+    LESErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
+    const Parameters::MeshAdaptationParam *const mesh_adaptation_param;
 
     /// Destructor
     ~LESErrorEstimate() {};

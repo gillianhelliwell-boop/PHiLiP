@@ -10,7 +10,7 @@ MeshAdaptation<dim,real,MeshType>::MeshAdaptation(std::shared_ptr< DGBase<dim, r
     , mesh_adaptation_param(mesh_adaptation_param_input)
     , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)==0)
     {
-        mesh_error = MeshErrorFactory<dim, 5, real, MeshType> :: create_mesh_error(dg);
+        mesh_error = MeshErrorFactory<dim, 5, real, MeshType> :: create_mesh_error(dg, mesh_adaptation_param);
     }
 
 
@@ -23,7 +23,7 @@ void MeshAdaptation<dim,real,MeshType>::adapt_mesh()
     //update_cellwise_errors();
     //cellwise_errors = get_cellwise_errors();
     cellwise_errors = mesh_error->compute_cellwise_errors();
-    pcout<<"Called compute_cellwise_errors..."<<std::endl;
+    //pcout<<"Called compute_cellwise_errors..."<<std::endl;
 
     [[maybe_unused]] unsigned int actual_size_of_cellwise_errors = cellwise_errors.size();
     AssertDimension(expected_size_of_cellwise_errors, actual_size_of_cellwise_errors);
@@ -31,7 +31,7 @@ void MeshAdaptation<dim,real,MeshType>::adapt_mesh()
     pcout<<"Performing fixed_fraction_isotropic_refinement_and_coarsening: "<<std::endl;
     fixed_fraction_isotropic_refinement_and_coarsening();
     current_mesh_adaptation_cycle++;
-    pcout<<"Mesh has been adapted according to the specified error indicator. Adaptation cycle = "<<current_mesh_adaptation_cycle<<std::endl;
+    //pcout<<"Mesh has been adapted according to the specified error indicator. Adaptation cycle = "<<current_mesh_adaptation_cycle<<std::endl;
 
     //mesh_error->output_results_vtk(current_mesh_adaptation_cycle);
 }
@@ -69,13 +69,6 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
     // Mark the cells you want
     // ----------------------------------------
     //mark_airfoil_layers(dg->dof_handler);
-    auto dump_cell = [&](const std::string &label){
-    for (const auto &cell : dg->dof_handler.active_cell_iterators())
-        if (cell->is_locally_owned() && (cell->refine_flag_set() && cell->future_fe_index_set()))
-            pcout << label << ": cell " << cell->id().to_string()
-                  << " has BOTH refine_flag and future_fe_index="
-                  << cell->future_fe_index() << std::endl;
-    };
 
 
     if(mesh_adaptation_type == MeshAdaptationTypeEnum::h_adaptation){
@@ -89,12 +82,10 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
         dealii::hp::Refinement::p_adaptivity_fixed_number(dg->dof_handler,
                                                           cellwise_errors,
                                                           mesh_adaptation_param->refine_threshold_p,
-                                                          mesh_adaptation_param->coarsen_threshold_p);       
-        dump_cell("after p_adaptivity");                         
+                                                          mesh_adaptation_param->coarsen_threshold_p);                               
         //dealii::hp::Refinement::p_adaptivity_from_relative_threshold(dg->dof_handler, cellwise_errors, 1.0, mesh_adaptation_param->coarsen_threshold_p);
         // If a cell is flagged for both h and p adaptation, perform only p adaptation.
         dealii::hp::Refinement::force_p_over_h(dg->dof_handler);
-        dump_cell("after force_p_over_h");
 
     } else if(mesh_adaptation_type == MeshAdaptationTypeEnum::hp_adaptation){
         smoothness_sensor_based_hp_refinement();
@@ -114,7 +105,6 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
     << dealii::Utilities::MPI::sum(n_coarsen_flagged, comm) << " flagged for coarsen" << std::endl;
     
 //=========================================================================================================================================================
-    dump_cell("right before execute_coarsening_and_refinement");
     unsigned int h_only = 0, p_only = 0, neither = 0;
     for (const auto &cell : dg->dof_handler.active_cell_iterators())
         if (cell->is_locally_owned())

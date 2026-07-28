@@ -44,6 +44,27 @@ void MeshAdaptationParam::declare_parameters (dealii::ParameterHandler &prm)
                               dealii::Patterns::Double(0.0,1e5),
                               "Time at which to end mesh adaptation.");
 
+        prm.declare_entry("indicator_state", "all",
+                            dealii::Patterns::Selection(
+                            " energy | "
+                            " x_momentum | "
+                            " y_momentum | "
+                            " x_y_momentum | "
+                            " z_momentum | "
+                            " momentum | "
+                            " all | "
+                            " mass "),
+                            "State used for error indicator."
+                            "Choices are "
+                            " energy | "
+                            " x_momentum | "
+                            " y_momentum | "
+                            " x_y_momentum | "
+                            " z_momentum | "
+                            " momentum | "
+                            " all | "
+                            " mass>.");
+
         prm.enter_subsection("fixed-fraction");
         {
             prm.declare_entry("refine_fraction","0.0",
@@ -105,6 +126,17 @@ void MeshAdaptationParam::parse_parameters (dealii::ParameterHandler &prm)
         use_LES_mesh_adaptation = prm.get_bool("use_LES_mesh_adaptation");
         mesh_adaptation_start_time = prm.get_double("mesh_adaptation_start_time");
         mesh_adaptation_end_time = prm.get_double("mesh_adaptation_end_time");
+
+        const std::string indicator_state_string = prm.get("indicator_state");
+        if(indicator_state_string == "energy")                {indicator_state = IndicatorState::energy;}
+        else if(indicator_state_string == "x_momentum")           {indicator_state = IndicatorState::x_momentum;}
+        else if(indicator_state_string == "y_momentum")          {indicator_state = IndicatorState::y_momentum;}
+        else if(indicator_state_string == "x_y_momentum") {indicator_state = IndicatorState::x_y_momentum;}
+        else if(indicator_state_string == "z_momentum")           {indicator_state = IndicatorState::z_momentum;}
+        else if(indicator_state_string == "momentum")          {indicator_state = IndicatorState::momentum;}
+        else if(indicator_state_string == "all") {indicator_state = IndicatorState::all;}
+        else if(indicator_state_string == "mass") {indicator_state = IndicatorState::mass;}
+
         prm.enter_subsection("fixed-fraction");
         {
             refine_fraction = prm.get_double("refine_fraction");

@@ -19,6 +19,20 @@ public:
     };
     /// Selection of mesh adaptation type
     MeshAdaptationType mesh_adaptation_type;
+
+    //Selection of state to use for unsteady residual error indicator
+    enum IndicatorState{
+        energy,
+        x_momentum,
+        y_momentum,
+        x_y_momentum,
+        z_momentum,
+        momentum,
+        mass,
+        all
+    };
+
+    IndicatorState indicator_state;
     
     /// Total/maximum number of mesh adaptation cycles while solving a problem.
     int total_mesh_adaptation_cycles;
