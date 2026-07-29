@@ -87,6 +87,33 @@ LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_pt
 template <int dim, int nstate, typename real, typename MeshType>
 dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
+    // Declare physics pointer
+    std::shared_ptr< Physics::NavierStokes<dim,nspecies,dim+2,double> > navier_stokes_physics;
+
+    // Initialize (copied from periodic_turbulence line 49)
+    using PDE_enum = Parameters::AllParameters::PartialDifferentialEquation;
+    PHiLiP::Parameters::AllParameters parameters_navier_stokes = this->dg->all_parameters;
+    parameters_navier_stokes.pde_type = PDE_enum::navier_stokes;
+    navier_stokes_physics = std::dynamic_pointer_cast<Physics::NavierStokes<dim,nspecies,dim+2,double>>(
+                Physics::PhysicsFactory<dim,nspecies,dim+2,double>::create_Physics(&parameters_navier_stokes));
+
+    for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
+    {
+        if(!cell->is_locally_owned()) continue;
+        const unsigned int fe_index_curr_cell = cell->active_fe_index();
+
+        //project mesh to p+1
+
+        //assemble residual
+
+        dealii::Vector<real> unsteady_residual(this->dg->triangulation->n_active_cells());
+
+        //dof loop
+    }
+
+    // once we have dg->solution at a node, we can mimic line 642 pm periodic_turbulence.cpp
+    
+    /*
     //the below code computes the unsteady residual of value epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
     //auto Q_p = this->dg->solution; //save original solution
     //compute residual at p+1
@@ -220,7 +247,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
             unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
         }
  
-        //pcout<<"residual mass: "<<residual_mass<<"; residual momentum: "<<(total_residual_momentum*dofs_momentum/sum_momentum)<<"; residual energy: "<<residual_energy<<std::endl;
+        pcout<<"residual mass: "<<residual_mass<<"; residual momentum: "<<(total_residual_momentum*dofs_momentum/sum_momentum)<<"; residual energy: "<<residual_energy<<std::endl;
         //pcout<<"UNSTEADY RESIDUAL: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
     }
     
@@ -229,6 +256,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
     //this->dg->solution = Q_p; //restore solution vector 
     return unsteady_residual;
+    */
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
