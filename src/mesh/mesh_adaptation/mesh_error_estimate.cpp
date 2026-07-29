@@ -212,7 +212,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
                     {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[1]*dofs_per_state/sum_per_state[1] + residual_per_state_per_cell[2]*dofs_per_state/sum_per_state[2];}}
             else if (state == Parameters::MeshAdaptationParam::z_momentum)
                 {if (nstate > 3)
-                    {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[3]*dofs_per_state/sum_per_state[3];}}
+                    {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[3];}}
             else if (state == Parameters::MeshAdaptationParam::momentum)
                 {unsteady_residual[cell->active_cell_index()] = total_residual_momentum*dofs_momentum/sum_momentum;}
         }
