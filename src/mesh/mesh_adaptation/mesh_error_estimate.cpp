@@ -27,6 +27,7 @@
 #include "physics/physics.h"
 #include "linear_solver/linear_solver.h"
 #include "post_processor/physics_post_processor.h"
+#include "physics/physics_factory.h"
 
 namespace PHiLiP {
 
@@ -87,30 +88,141 @@ LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_pt
 template <int dim, int nstate, typename real, typename MeshType>
 dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
-    // Declare physics pointer
-    std::shared_ptr< Physics::NavierStokes<dim,nspecies,dim+2,double> > navier_stokes_physics;
+    // Declare physics pointer --> should probably initialize this in class constructor like dg pointer then pass it through
+    std::shared_ptr<PHiLiP::Physics::NavierStokes<dim,nstate, real> > navier_stokes_physics;
 
     // Initialize (copied from periodic_turbulence line 49)
     using PDE_enum = Parameters::AllParameters::PartialDifferentialEquation;
-    PHiLiP::Parameters::AllParameters parameters_navier_stokes = this->dg->all_parameters;
+    PHiLiP::Parameters::AllParameters parameters_navier_stokes = *(this->dg->all_parameters);
     parameters_navier_stokes.pde_type = PDE_enum::navier_stokes;
-    navier_stokes_physics = std::dynamic_pointer_cast<Physics::NavierStokes<dim,nspecies,dim+2,double>>(
-                Physics::PhysicsFactory<dim,nspecies,dim+2,double>::create_Physics(&parameters_navier_stokes));
+    navier_stokes_physics = std::dynamic_pointer_cast<PHiLiP::Physics::NavierStokes<dim, nstate, real>>(
+                PHiLiP::Physics::PhysicsFactory<dim,nstate,real>::create_Physics(&parameters_navier_stokes));
+    reinit();
+    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
+    const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
+    std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
+    
+    std::cout << "n_active_cells at adjoint_residual construction: " 
+          << this->dg->triangulation->n_active_cells() << std::endl;
+    dealii::Vector<real> adjoint_residual(this->dg->triangulation->n_active_cells());
+    this->dg->assemble_residual(); //assemble residual of projected mesh
 
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
     {
         if(!cell->is_locally_owned()) continue;
         const unsigned int fe_index_curr_cell = cell->active_fe_index();
+        const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
+        const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
+        current_dofs_indices.resize(n_dofs_curr_cell);
+        cell->get_dof_indices(current_dofs_indices);
 
-        //project mesh to p+1
+        const int poly_degree = cell->active_fe_index();
+        //const int n_dofs = cell->get_fe().n_dofs_per_cell();
+    
+       const unsigned int n_quad_pts  = this->dg->volume_quadrature_collection[poly_degree].size();
 
-        //assemble residual
+        const unsigned int n_shape_fns = n_dofs_curr_cell / nstate;
 
-        dealii::Vector<real> unsteady_residual(this->dg->triangulation->n_active_cells());
 
-        //dof loop
+        std::array<std::vector<real>,nstate> soln_coeff;
+        std::array<std::vector<real>,nstate> rhs_coeff;
+        const unsigned int init_grid_degree = this->dg->high_order_grid->fe_system.tensor_degree();
+        dealii::Quadrature<1> vol_quad_equidistant_1D = dealii::QIterated<1>(dealii::QTrapez<1>(),poly_degree);
+        OPERATOR::basis_functions<dim,2*dim> soln_basis(1, poly_degree, init_grid_degree); 
+        OPERATOR::vol_projection_operator<dim,2*dim> soln_basis_projection_oper(1, poly_degree, this->dg->max_grid_degree);
+        soln_basis.build_1D_volume_operator(this->dg->oneD_fe_collection_1state[poly_degree], vol_quad_equidistant_1D);
+        soln_basis.build_1D_gradient_operator(this->dg->oneD_fe_collection_1state[poly_degree], vol_quad_equidistant_1D); 
+        soln_basis_projection_oper.build_1D_volume_operator(this->dg->oneD_fe_collection_1state[poly_degree], vol_quad_equidistant_1D);
+
+        for (unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof) {
+            const unsigned int istate = (cell->get_fe().system_to_component_index(idof)).first;
+            const unsigned int ishape = (cell->get_fe().system_to_component_index(idof)).second;
+            // allocate
+            if(ishape == 0){
+                soln_coeff[istate].resize(n_shape_fns);
+                rhs_coeff[istate].resize(n_shape_fns);
+            }
+            // solve
+            soln_coeff[istate][ishape] = this->dg->solution(current_dofs_indices[idof]);
+            rhs_coeff[istate][ishape] = this->dg->right_hand_side(current_dofs_indices[idof]);
+
+            //project onto quadrature points
+        }
+
+        std::array<std::vector<double>,nstate> soln_at_q;
+        for(int istate=0; istate<nstate; istate++){
+            soln_at_q[istate].resize(n_quad_pts);
+
+                // Interpolate soln coeff to volume cubature nodes.
+            soln_basis.matrix_vector_mult_1D(soln_coeff[istate], soln_at_q[istate],
+                                                soln_basis.oneD_vol_operator);
+            }
+        
+        std::vector<std::array<real,nstate>> entropy_var_at_q(n_quad_pts);
+      
+        for (unsigned int iquad=0; iquad<n_quad_pts; ++iquad)
+        {
+            
+            //std::array<real, nstate> entropy_variables;
+            std::array<real, nstate> solution;
+            for (unsigned int istate=0; istate<nstate; ++istate)
+            {
+                solution[istate] = soln_at_q[istate][iquad];
+            }
+            entropy_var_at_q[iquad] = navier_stokes_physics->compute_entropy_variables(solution);
+
+            
+        }
+        std::array<std::vector<real>,nstate> entropy_var_coeff;
+        std::array<std::vector<real>,nstate> entropy_var_at_q_bystate;
+        for (unsigned int istate=0; istate<nstate; ++istate) {
+            entropy_var_at_q_bystate[istate].resize(n_quad_pts);
+            entropy_var_coeff[istate].resize(n_shape_fns);
+            for (unsigned int iquad=0; iquad<n_quad_pts; ++iquad) {
+                entropy_var_at_q_bystate[istate][iquad] = entropy_var_at_q[iquad][istate];
+            }
+            soln_basis_projection_oper.matrix_vector_mult_1D(entropy_var_at_q_bystate[istate],
+                                                            entropy_var_coeff[istate],
+                                                            soln_basis_projection_oper.oneD_vol_operator);
+        }
+        auto print_array = [](const auto &arr) {
+        std::ostringstream os;
+        os << "[";
+        for (size_t i = 0; i < arr.size(); ++i) {
+            os << arr[i] << (i + 1 < arr.size() ? ", " : "");
+        }
+        os << "]";
+        return os.str();
+        };
+        for (unsigned int ishape=0; ishape<n_shape_fns; ++ishape)
+        {
+     
+            std::vector<real> product_at_quad(n_shape_fns);
+            std::array<real,nstate> entropy_var_at_shape, rhs_at_shape;
+
+            for (unsigned int istate=0; istate<nstate; ++istate) {
+                entropy_var_at_shape[istate] = entropy_var_coeff[istate][ishape];
+                rhs_at_shape[istate] = rhs_coeff[istate][ishape];
+            }
+            
+            product_at_quad[ishape] = std::inner_product(entropy_var_at_shape.begin(), entropy_var_at_shape.end(), rhs_at_shape.begin(), 0.0);
+          
+            adjoint_residual[cell->active_cell_index()] += std::abs(product_at_quad[ishape]);
+
+            std::cout << "adjoint_residual.size()=" << adjoint_residual.size()
+          << " active_cell_index=" << cell->active_cell_index()
+          << " triangulation n_active_cells=" << this->dg->triangulation->n_active_cells()
+          << " adjoint_residual=" << adjoint_residual[cell->active_cell_index()]
+          << " rhs_at_shape=" << print_array(rhs_at_shape)
+          << " entropy_var_at_shape=" << print_array(entropy_var_at_shape)
+          << std::endl;
+        }
+        adjoint_residual[cell->active_cell_index()] /= n_shape_fns;
+        
     }
-
+    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse); 
+    pcout<<"computed adjoint residual"<<std::endl;
+    return adjoint_residual;
     // once we have dg->solution at a node, we can mimic line 642 pm periodic_turbulence.cpp
     
     /*
@@ -135,7 +247,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if(!cell->is_locally_owned())  continue;
-        const unsigned int fe_index_curr_cell = cell->active_fe_index();
+        
 
         if ((fe_index_curr_cell+1) == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation) continue;
         const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
@@ -195,7 +307,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         {
             const real rhs_cell = this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof];
             std::pair<unsigned int, unsigned int> state_and_node = cell->get_fe().system_to_component_index(idof);
-            //pcout<<"current state: "<<(state_and_node.first)<<"; current residual_per_state_per_cell: "<<residual_per_state_per_cell[state_and_node.first]<<std::endl;
+            //<pcout<"current state: "<<(state_and_node.first)<<"; current residual_per_state_per_cell: "<<residual_per_state_per_cell[state_and_node.first]<<std::endl;
             residual_per_state_per_cell[state_and_node.first] += std::abs(rhs_cell);
         }
         
