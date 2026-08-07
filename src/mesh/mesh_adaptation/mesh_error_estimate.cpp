@@ -194,10 +194,11 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         os << "]";
         return os.str();
         };
+        real adjoint_residual_sum = 0.0;
         for (unsigned int ishape=0; ishape<n_shape_fns; ++ishape)
         {
      
-            std::vector<real> product_at_quad(n_shape_fns);
+            std::vector<real> product_at_shape_fns(n_shape_fns);
             std::array<real,nstate> entropy_var_at_shape, rhs_at_shape;
 
             for (unsigned int istate=0; istate<nstate; ++istate) {
@@ -205,9 +206,8 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
                 rhs_at_shape[istate] = rhs_coeff[istate][ishape];
             }
             
-            product_at_quad[ishape] = std::inner_product(entropy_var_at_shape.begin(), entropy_var_at_shape.end(), rhs_at_shape.begin(), 0.0);
-          
-            adjoint_residual[cell->active_cell_index()] += std::abs(product_at_quad[ishape]);
+            product_at_shape_fns[ishape] = std::inner_product(entropy_var_at_shape.begin(), entropy_var_at_shape.end(), rhs_at_shape.begin(), 0.0); 
+            adjoint_residual_sum += product_at_shape_fns[ishape];
 
             std::cout << "adjoint_residual.size()=" << adjoint_residual.size()
           << " active_cell_index=" << cell->active_cell_index()
@@ -217,7 +217,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
           << " entropy_var_at_shape=" << print_array(entropy_var_at_shape)
           << std::endl;
         }
-        adjoint_residual[cell->active_cell_index()] /= n_shape_fns;
+        adjoint_residual[cell->active_cell_index()] = std::abs(adjoint_residual_sum);
         
     }
     convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse); 
