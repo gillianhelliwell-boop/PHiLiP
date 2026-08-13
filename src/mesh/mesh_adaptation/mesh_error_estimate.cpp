@@ -111,6 +111,11 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     {
         if(!cell->is_locally_owned()) continue;
         const unsigned int fe_index_curr_cell = cell->active_fe_index();
+        if ((fe_index_curr_cell+1) == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation)
+        {   adjoint_residual[cell->active_cell_index()]= 0.0;
+            continue; }
+
+
         const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
         const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
         current_dofs_indices.resize(n_dofs_curr_cell);
@@ -185,15 +190,25 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
                                                             entropy_var_coeff[istate],
                                                             soln_basis_projection_oper.oneD_vol_operator);
         }
-        auto print_array = [](const auto &arr) {
-        std::ostringstream os;
-        os << "[";
-        for (size_t i = 0; i < arr.size(); ++i) {
-            os << arr[i] << (i + 1 < arr.size() ? ", " : "");
+
+        
+        real adjoint_residual_sum = 0.0;
+        for (unsigned int istate=0; istate<nstate; ++istate) {
+            std::vector<real> rhs_at_state(n_shape_fns);
+            std::vector<real> entropy_var_at_state(n_shape_fns);
+            real product_at_state = 0.0;
+            rhs_at_state = rhs_coeff[istate];
+            entropy_var_at_state = entropy_var_coeff[istate];
+            for (unsigned int ishape=0; ishape<n_shape_fns; ++ishape) {
+                entropy_var_at_state[ishape] = std::abs(entropy_var_at_state[ishape]);
+                rhs_at_state[ishape] = std::abs(rhs_at_state[ishape]);
+            }
+
+            product_at_state = std::inner_product(entropy_var_at_state.begin(), entropy_var_at_state.end(), rhs_at_state.begin(), 0.0);
+            adjoint_residual_sum += std::abs(product_at_state);
         }
-        os << "]";
-        return os.str();
-        };
+
+        /*
         real adjoint_residual_sum = 0.0;
         for (unsigned int ishape=0; ishape<n_shape_fns; ++ishape)
         {
@@ -208,16 +223,10 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
             
             product_at_shape_fns[ishape] = std::inner_product(entropy_var_at_shape.begin(), entropy_var_at_shape.end(), rhs_at_shape.begin(), 0.0); 
             adjoint_residual_sum += product_at_shape_fns[ishape];
+        }*/
 
-            std::cout << "adjoint_residual.size()=" << adjoint_residual.size()
-          << " active_cell_index=" << cell->active_cell_index()
-          << " triangulation n_active_cells=" << this->dg->triangulation->n_active_cells()
-          << " adjoint_residual=" << adjoint_residual[cell->active_cell_index()]
-          << " rhs_at_shape=" << print_array(rhs_at_shape)
-          << " entropy_var_at_shape=" << print_array(entropy_var_at_shape)
-          << std::endl;
-        }
-        adjoint_residual[cell->active_cell_index()] = std::abs(adjoint_residual_sum);
+
+        adjoint_residual[cell->active_cell_index()] = adjoint_residual_sum;
         
     }
     convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse); 
