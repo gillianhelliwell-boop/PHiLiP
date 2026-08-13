@@ -98,7 +98,6 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     navier_stokes_physics = std::dynamic_pointer_cast<PHiLiP::Physics::NavierStokes<dim, nstate, real>>(
                 PHiLiP::Physics::PhysicsFactory<dim,nstate,real>::create_Physics(&parameters_navier_stokes));
     reinit();
-    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
     
@@ -199,10 +198,10 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
             real product_at_state = 0.0;
             rhs_at_state = rhs_coeff[istate];
             entropy_var_at_state = entropy_var_coeff[istate];
-            for (unsigned int ishape=0; ishape<n_shape_fns; ++ishape) {
+            /*for (unsigned int ishape=0; ishape<n_shape_fns; ++ishape) {
                 entropy_var_at_state[ishape] = std::abs(entropy_var_at_state[ishape]);
                 rhs_at_state[ishape] = std::abs(rhs_at_state[ishape]);
-            }
+            } */
 
             product_at_state = std::inner_product(entropy_var_at_state.begin(), entropy_var_at_state.end(), rhs_at_state.begin(), 0.0);
             adjoint_residual_sum += std::abs(product_at_state);
@@ -229,7 +228,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         adjoint_residual[cell->active_cell_index()] = adjoint_residual_sum;
         
     }
-    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse); 
+    
     pcout<<"computed adjoint residual"<<std::endl;
     return adjoint_residual;
     // once we have dg->solution at a node, we can mimic line 642 pm periodic_turbulence.cpp
