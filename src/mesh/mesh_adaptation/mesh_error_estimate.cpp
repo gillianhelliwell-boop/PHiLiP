@@ -192,19 +192,27 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
         
         real adjoint_residual_sum = 0.0;
+
+
+
+
         for (unsigned int istate=0; istate<nstate; ++istate) {
             std::vector<real> rhs_at_state(n_shape_fns);
             std::vector<real> entropy_var_at_state(n_shape_fns);
             real product_at_state = 0.0;
             rhs_at_state = rhs_coeff[istate];
             entropy_var_at_state = entropy_var_coeff[istate];
-            /*for (unsigned int ishape=0; ishape<n_shape_fns; ++ishape) {
+
+
+
+           for (unsigned int ishape=0; ishape<n_shape_fns; ++ishape) {
                 entropy_var_at_state[ishape] = std::abs(entropy_var_at_state[ishape]);
+                //pcout<<"entropy variables at state ["<<istate<<"]: and shape function: "<<ishape<<"value: "<<entropy_var_at_state[ishape]<<std::endl;
                 rhs_at_state[ishape] = std::abs(rhs_at_state[ishape]);
-            } */
+            //} 
 
             product_at_state = std::inner_product(entropy_var_at_state.begin(), entropy_var_at_state.end(), rhs_at_state.begin(), 0.0);
-            adjoint_residual_sum += std::abs(product_at_state);
+            adjoint_residual_sum += product_at_state;
         }
 
         /*
