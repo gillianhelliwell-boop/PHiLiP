@@ -28,7 +28,7 @@
 #include "linear_solver/linear_solver.h"
 #include "post_processor/physics_post_processor.h"
 #include "physics/physics_factory.h"
-
+#include "physics/euler.h"
 namespace PHiLiP {
 
 template <int dim, typename real, typename MeshType>
@@ -88,6 +88,8 @@ LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_pt
 template <int dim, int nstate, typename real, typename MeshType>
 dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
+   
+   
     // Declare physics pointer --> should probably initialize this in class constructor like dg pointer then pass it through
     std::shared_ptr<PHiLiP::Physics::NavierStokes<dim,nstate, real> > navier_stokes_physics;
 
@@ -97,6 +99,9 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     parameters_navier_stokes.pde_type = PDE_enum::navier_stokes;
     navier_stokes_physics = std::dynamic_pointer_cast<PHiLiP::Physics::NavierStokes<dim, nstate, real>>(
                 PHiLiP::Physics::PhysicsFactory<dim,nstate,real>::create_Physics(&parameters_navier_stokes));
+
+
+    
     reinit();
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
@@ -104,6 +109,62 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     std::cout << "n_active_cells at adjoint_residual construction: " 
           << this->dg->triangulation->n_active_cells() << std::endl;
     dealii::Vector<real> adjoint_residual(this->dg->triangulation->n_active_cells());
+
+    if constexpr (nstate == dim + 2)
+    {
+    //entropy generation method
+    
+    for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
+    {
+        if(!cell->is_locally_owned()) continue;
+        const unsigned int fe_index_curr_cell = cell->active_fe_index();
+        if ((fe_index_curr_cell+1) == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation)
+        {   adjoint_residual[cell->active_cell_index()]= 0.0;
+            continue; }
+
+        const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
+        const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
+        current_dofs_indices.resize(n_dofs_curr_cell);
+        cell->get_dof_indices(current_dofs_indices);
+
+        
+        std::array<std::vector<real>, nstate> solution_per_state;
+        const unsigned int n_shape_fns = n_dofs_curr_cell / nstate;
+
+        for (unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof) {
+            const unsigned int istate = (cell->get_fe().system_to_component_index(idof)).first;
+            const unsigned int ishape = (cell->get_fe().system_to_component_index(idof)).second;
+            // allocate
+            if(ishape == 0){
+                solution_per_state[istate].resize(n_shape_fns);
+            }
+            // solve
+            solution_per_state[istate][ishape] = this->dg->solution(current_dofs_indices[idof]);
+        }
+
+        const unsigned int n_quad_pts  = this->dg->volume_quadrature_collection[fe_index_curr_cell].size();
+        std::vector<real> entropy_at_q(n_quad_pts);
+        real entropy_per_cell = 0.0;
+      
+        for (unsigned int iquad=0; iquad<n_quad_pts; ++iquad)
+        {
+            //std::array<real, nstate> entropy_variables;
+            std::array<real, nstate> solution;
+            for (unsigned int istate=0; istate<nstate; ++istate)
+            {
+                solution[istate] = solution_per_state[istate][iquad];
+            }
+            entropy_per_cell += (navier_stokes_physics->compute_entropy_measure(solution)) - navier_stokes_physics->entropy_inf;
+        }        
+
+        adjoint_residual[cell->active_cell_index()] = entropy_per_cell;
+
+
+        }
+
+    }
+/*
+        
     this->dg->assemble_residual(); //assemble residual of projected mesh
 
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
@@ -209,11 +270,11 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
                 entropy_var_at_state[ishape] = std::abs(entropy_var_at_state[ishape]);
                 //pcout<<"entropy variables at state ["<<istate<<"]: and shape function: "<<ishape<<"value: "<<entropy_var_at_state[ishape]<<std::endl;
                 rhs_at_state[ishape] = std::abs(rhs_at_state[ishape]);
-            //} 
+            } 
 
             product_at_state = std::inner_product(entropy_var_at_state.begin(), entropy_var_at_state.end(), rhs_at_state.begin(), 0.0);
             adjoint_residual_sum += product_at_state;
-        }
+        } */
 
         /*
         real adjoint_residual_sum = 0.0;
@@ -230,12 +291,12 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
             
             product_at_shape_fns[ishape] = std::inner_product(entropy_var_at_shape.begin(), entropy_var_at_shape.end(), rhs_at_shape.begin(), 0.0); 
             adjoint_residual_sum += product_at_shape_fns[ishape];
-        }*/
+        }
 
 
         adjoint_residual[cell->active_cell_index()] = adjoint_residual_sum;
         
-    }
+    } */
     
     pcout<<"computed adjoint residual"<<std::endl;
     return adjoint_residual;
