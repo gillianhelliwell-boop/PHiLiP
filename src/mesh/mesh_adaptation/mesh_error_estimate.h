@@ -18,7 +18,7 @@
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_values.h>
 #include "functional/functional.h"
-#include "physics/physics.h"
+#include "physics/euler.h"
 
 namespace PHiLiP {
     

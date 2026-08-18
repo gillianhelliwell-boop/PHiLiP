@@ -85,6 +85,8 @@ LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_pt
     {}
 
 
+
+
 template <int dim, int nstate, typename real, typename MeshType>
 dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
@@ -103,13 +105,14 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
     
     reinit();
+    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
     
     std::cout << "n_active_cells at adjoint_residual construction: " 
           << this->dg->triangulation->n_active_cells() << std::endl;
     dealii::Vector<real> adjoint_residual(this->dg->triangulation->n_active_cells());
-
+/* THE BELOW METHOD IS FOR ENTROPY GENERATION
     if constexpr (nstate == dim + 2)
     {
     //entropy generation method
@@ -163,8 +166,8 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         }
 
     }
-/*
-        
+*/
+    //BELOW IS THE DOT PRODUCT OF SOLUTION AND ENTROPY VARIABLES
     this->dg->assemble_residual(); //assemble residual of projected mesh
 
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
@@ -266,15 +269,14 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
 
 
-           for (unsigned int ishape=0; ishape<n_shape_fns; ++ishape) {
-                entropy_var_at_state[ishape] = std::abs(entropy_var_at_state[ishape]);
+           //for (unsigned int ishape=0; ishape<n_shape_fns; ++ishape) {
+               // entropy_var_at_state[ishape] = std::abs(entropy_var_at_state[ishape]);
                 //pcout<<"entropy variables at state ["<<istate<<"]: and shape function: "<<ishape<<"value: "<<entropy_var_at_state[ishape]<<std::endl;
-                rhs_at_state[ishape] = std::abs(rhs_at_state[ishape]);
-            } 
+               // rhs_at_state[ishape] = std::abs(rhs_at_state[ishape]); } 
 
             product_at_state = std::inner_product(entropy_var_at_state.begin(), entropy_var_at_state.end(), rhs_at_state.begin(), 0.0);
-            adjoint_residual_sum += product_at_state;
-        } */
+            adjoint_residual_sum += std::abs(product_at_state);
+        } 
 
         /*
         real adjoint_residual_sum = 0.0;
@@ -292,17 +294,16 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
             product_at_shape_fns[ishape] = std::inner_product(entropy_var_at_shape.begin(), entropy_var_at_shape.end(), rhs_at_shape.begin(), 0.0); 
             adjoint_residual_sum += product_at_shape_fns[ishape];
         }
-
+*/
 
         adjoint_residual[cell->active_cell_index()] = adjoint_residual_sum;
         
-    } */
-    
+    } 
+    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);
     pcout<<"computed adjoint residual"<<std::endl;
     return adjoint_residual;
-    // once we have dg->solution at a node, we can mimic line 642 pm periodic_turbulence.cpp
     
-    /*
+    /* THE BELOW METHOD IS THE IMS UNSTEADY RESIDUAL
     //the below code computes the unsteady residual of value epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
     //auto Q_p = this->dg->solution; //save original solution
     //compute residual at p+1

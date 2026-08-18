@@ -796,7 +796,8 @@ std::array<real,nstate> Euler<dim, nstate, real>
     
     const real entropy = compute_entropy<real>(density, pressure);
 
-    const real rho_theta = pressure / gamm1;
+    //const real rho_theta = pressure / gamm1;
+    const real rho_theta = pressure;
 
     entropy_var[0] = (rho_theta *(gam + 1.0 - entropy) - conservative_soln[nstate-1])/rho_theta;
     for(int idim=0; idim<dim; idim++){
@@ -806,6 +807,10 @@ std::array<real,nstate> Euler<dim, nstate, real>
 
     return entropy_var;
 }
+
+
+
+
 
 template <int dim, int nstate, typename real>
 std::array<real,nstate> Euler<dim, nstate, real>
