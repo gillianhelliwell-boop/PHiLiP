@@ -15,7 +15,7 @@ class MeshErrorFactory
 {
 public:
     /// Returns pointer of the mesh error's abstract class.
-    static std::unique_ptr<MeshErrorEstimateBase<dim, real, MeshType>> create_mesh_error(std::shared_ptr< DGBase<dim,real,MeshType> > dg, const Parameters::MeshAdaptationParam *const mesh_adaptation_param);
+    static std::unique_ptr<MeshErrorEstimateBase<dim, nstate, real, MeshType>> create_mesh_error(std::shared_ptr< DGBase<dim,real,MeshType> > dg, const Parameters::MeshAdaptationParam *const mesh_adaptation_param);
 };
 
 } // namespace PHiLiP

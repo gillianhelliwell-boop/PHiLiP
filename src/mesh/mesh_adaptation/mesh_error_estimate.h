@@ -30,9 +30,9 @@ std::vector< real > project_function(
     const dealii::QGauss<dim> &projection_quadrature);
 
 #if PHILIP_DIM==1
-template <int dim, typename real, typename MeshType = dealii::Triangulation<dim>>
+template <int dim, int nstate, typename real, typename MeshType = dealii::Triangulation<dim>>
 #else
-template <int dim, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
+template <int dim, int nstate, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
 #endif
 
 /// Abstract class to estimate error for mesh adaptation. 
@@ -40,31 +40,81 @@ class MeshErrorEstimateBase
 {
 
 public:
+    /// Constructor
+    MeshErrorEstimateBase(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);    
+/// Pointer to DGBase
+    std::shared_ptr<DGBase<dim,real,MeshType>> dg;
+    const Parameters::MeshAdaptationParam *const mesh_adaptation_param;
 
-    /// Computes the vector containing errors in each cell.
+    enum SolutionRefinementStateEnum{
+        coarse, ///< Initial state
+        fine,   ///< Refined state
+    };
+
+    /// original solution
+    dealii::LinearAlgebra::distributed::Vector<real> solution_coarse;
+    /// Current refinement state of the solution
+    SolutionRefinementStateEnum solution_refinement_state;
+     /// Original FE_index distribution
+    dealii::Vector<real> coarse_fe_index;
+
+     /// Reinitializes member variables of LESErrorEstimate. 
+    /** Sets solution_refinement_state to SolutionRefinementStateEnum::coarse and stores the current
+     *  solution and polynomial order distribution
+     */
+
+     /// Computes the vector containing errors in each cell.
     virtual dealii::Vector<real> compute_cellwise_errors () = 0;
 
     //outputs the results
     virtual void output_results_vtk(const unsigned int /*cycle*/, const dealii::Vector<real> &/*cellwise_errors*/) {};
+   
+    virtual void reinit();
+
+    /// Converts DG solution to the specified state.
+    /** Calls the functions coarse_to_fine() or fine_to_coarse()
+     *  if the LESErrorEstimate::solution_refinement_state is different than the input \p state
+     */
+    virtual void convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum refinement_state);
+
+    /// Projects the problem to a p-enriched space.
+    /** Raises the FE_index on each cell and transfers the coarse 
+     *  solution to a fine solution (stored in DGBase::solution)
+     */
+    virtual void coarse_to_fine();
+
+    /// Return the problem to the original solution and polynomial distribution
+    /** Copies the values that were stored in solution_coarse and 
+     *  DualWeightedResidualError::coarse_fe_index at intilization
+     */
+    virtual void fine_to_coarse();
 
     /// Constructor
-    MeshErrorEstimateBase(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input);
+    /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.
+     *  Also stores the current solution and distribution of polynomial orders
+     *  for the mesh for converting back to coarse state after refinement.
+ */
 
     /// Virtual Destructor
-    virtual ~MeshErrorEstimateBase() = 0;
+    //virtual ~MeshErrorEstimateBase() = 0;
 
-    /// Pointer to DGBase
-    std::shared_ptr<DGBase<dim,real,MeshType>> dg;
+
+    /// Destructor
+    ~MeshErrorEstimateBase() {};
+    protected:
+        MPI_Comm mpi_communicator;
+        dealii::ConditionalOStream pcout; ///< Parallel std::cout that only outputs on mpi_rank==0
+
 
 };
 
 #if PHILIP_DIM==1
-template <int dim, typename real, typename MeshType = dealii::Triangulation<dim>>
+template <int dim, int nstate, typename real, typename MeshType = dealii::Triangulation<dim>>
 #else
-template <int dim, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
+template <int dim, int nstate, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
 #endif
 /// Class to compute residual based error
-class ResidualErrorEstimate : public MeshErrorEstimateBase <dim, real, MeshType>
+class ResidualErrorEstimate : public MeshErrorEstimateBase <dim, nstate, real, MeshType>
 {
 
 public:
@@ -72,7 +122,7 @@ public:
     dealii::Vector<real> compute_cellwise_errors () override;
 
     /// Constructor
-    ResidualErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input);
+    ResidualErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
 
     /// Destructor
     ~ResidualErrorEstimate() {};
@@ -80,12 +130,12 @@ public:
 };
 
 #if PHILIP_DIM==1
-template <int dim, typename real, typename MeshType = dealii::Triangulation<dim>>
+template <int dim, int nstate, typename real, typename MeshType = dealii::Triangulation<dim>>
 #else
-template <int dim, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
+template <int dim, int nstate, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
 #endif
 /// Class to compute error estimate for explicit time stepping
-class ExplicitErrorEstimate : public MeshErrorEstimateBase <dim, real, MeshType>
+class ExplicitErrorEstimate : public MeshErrorEstimateBase <dim, nstate, real, MeshType>
 {
 
 public:
@@ -93,7 +143,7 @@ public:
     dealii::Vector<real> compute_cellwise_errors () override;
 
     /// Constructor
-    ExplicitErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input);
+    ExplicitErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
 
     /// Destructor
     ~ExplicitErrorEstimate() {};
@@ -122,22 +172,16 @@ template <int dim, int nstate, typename real, typename MeshType = dealii::Triang
 #else
 template <int dim, int nstate, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
 #endif
-class DualWeightedResidualError : public MeshErrorEstimateBase <dim, real, MeshType>
+class DualWeightedResidualError : public MeshErrorEstimateBase <dim, nstate, real, MeshType>
 {
 public:
-
-    /// For storing the current refinement state of the solution
-    enum SolutionRefinementStateEnum{
-        coarse, ///< Initial state
-        fine,   ///< Refined state
-    };
 
     /// Constructor
     /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.
      *  Also stores the current solution and distribution of polynomial orders
      *  for the mesh for converting back to coarse state after refinement.
      */
-    DualWeightedResidualError(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input);
+    DualWeightedResidualError(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
 
     ///Destructor
     ~DualWeightedResidualError() {};
@@ -146,25 +190,26 @@ public:
     /** Sets solution_refinement_state to SolutionRefinementStateEnum::coarse and stores the current
      *  solution and polynomial order distribution
      */
-    void reinit();
+    void reinit() override;
 
     /// Converts DG solution to the specified state.
     /** Calls the functions coarse_to_fine() or fine_to_coarse()
      *  if the DualWeightedResidualError::solution_refinement_state is different than the input \p state
      */
-    void convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum refinement_state);
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
+    void convert_dgsolution_to_coarse_or_fine(typename Base::SolutionRefinementStateEnum refinement_state) override;
 
     /// Projects the problem to a p-enriched space.
     /** Raises the FE_index on each cell and transfers the coarse 
      *  solution to a fine solution (stored in DGBase::solution)
      */
-    void coarse_to_fine();
+    void coarse_to_fine() override;
 
     /// Return the problem to the original solution and polynomial distribution
     /** Copies the values that were stored in solution_coarse and 
      *  DualWeightedResidualError::coarse_fe_index at intilization
      */
-    void fine_to_coarse();
+    void fine_to_coarse() override;
 
     /// Computes the fine grid adjoint
     /** Converts the state to a refined grid (if needed) and solves for DualWeightedResidualError::adjoint_fine from 
@@ -210,7 +255,7 @@ public:
      *  if currenly on the fine grid.
      */
     void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override {
-        MeshErrorEstimateBase<dim, real, MeshType>::output_results_vtk(cycle, cellwise_errors);
+        MeshErrorEstimateBase<dim, nstate, real, MeshType>::output_results_vtk(cycle, cellwise_errors);
     }
     void output_results_vtk(const unsigned int cycle);
 
@@ -222,7 +267,7 @@ public:
     std::shared_ptr< Functional<dim, nstate, real, MeshType> > functional;
     
     /// original solution
-    dealii::LinearAlgebra::distributed::Vector<real> solution_coarse;
+    //dealii::LinearAlgebra::distributed::Vector<real> solution_coarse;
     /// functional derivative (on the fine grid)
     dealii::LinearAlgebra::distributed::Vector<real> derivative_functional_wrt_solution_fine;
     /// functional derivative (on the coarse grid)
@@ -235,10 +280,10 @@ public:
     dealii::Vector<real> dual_weighted_residual_fine;
     
     /// Original FE_index distribution
-    dealii::Vector<real> coarse_fe_index;
+    //dealii::Vector<real> coarse_fe_index;
 
     /// Current refinement state of the solution
-    SolutionRefinementStateEnum solution_refinement_state;
+    //SolutionRefinementStateEnum solution_refinement_state;
 
 protected:
     MPI_Comm mpi_communicator; ///< MPI communicator
@@ -251,50 +296,14 @@ template <int dim, int nstate, typename real, typename MeshType = dealii::Triang
 #else
 template <int dim, int nstate, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
 #endif
-class LESErrorEstimate : public MeshErrorEstimateBase <dim, real, MeshType>
+class LESErrorEstimate : public MeshErrorEstimateBase <dim, nstate, real, MeshType>
 {
 
 public:
-    /// For storing the current refinement state of the solution
-    enum SolutionRefinementStateEnum{
-        coarse, ///< Initial state
-        fine,   ///< Refined state
-    };
-
     /// Computes unsteady residual in each cell to be used as an error estimate.
     dealii::Vector<real> compute_cellwise_errors () override;
-    /// original solution
-    dealii::LinearAlgebra::distributed::Vector<real> solution_coarse;
-    /// Current refinement state of the solution
-    SolutionRefinementStateEnum solution_refinement_state;
-     /// Original FE_index distribution
-    dealii::Vector<real> coarse_fe_index;
 
-
-
-    /// Reinitializes member variables of LESErrorEstimate. 
-    /** Sets solution_refinement_state to SolutionRefinementStateEnum::coarse and stores the current
-     *  solution and polynomial order distribution
-     */
-     void reinit();
-
-    /// Converts DG solution to the specified state.
-    /** Calls the functions coarse_to_fine() or fine_to_coarse()
-     *  if the LESErrorEstimate::solution_refinement_state is different than the input \p state
-     */
-    void convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum refinement_state);
-
-    /// Projects the problem to a p-enriched space.
-    /** Raises the FE_index on each cell and transfers the coarse 
-     *  solution to a fine solution (stored in DGBase::solution)
-     */
-    void coarse_to_fine();
-
-    /// Return the problem to the original solution and polynomial distribution
-    /** Copies the values that were stored in solution_coarse and 
-     *  DualWeightedResidualError::coarse_fe_index at intilization
-     */
-    void fine_to_coarse();
+    LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
 
     void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override;
 
@@ -303,8 +312,6 @@ public:
      *  Also stores the current solution and distribution of polynomial orders
      *  for the mesh for converting back to coarse state after refinement.
     */
-    LESErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
-    const Parameters::MeshAdaptationParam *const mesh_adaptation_param;
 
     /// Destructor
     ~LESErrorEstimate() {};

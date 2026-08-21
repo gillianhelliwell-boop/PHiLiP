@@ -382,7 +382,7 @@ void FlowSolver<dim,nstate>::output_restart_files(
 template <int dim, int nstate>
 void FlowSolver<dim,nstate>::perform_steady_state_mesh_adaptation() const
 {
-    std::unique_ptr<MeshAdaptation<dim,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,double>>(this->dg, &(this->all_param.mesh_adaptation_param));
+    std::unique_ptr<MeshAdaptation<dim,nstate,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,nstate,double>>(this->dg, &(this->all_param.mesh_adaptation_param));
     const int total_adaptation_cycles = this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles;
     double residual_norm = this->dg->get_residual_l2norm();
     
@@ -410,7 +410,7 @@ void FlowSolver<dim,nstate>::perform_steady_state_mesh_adaptation() const
 template <int dim, int nstate>
 void FlowSolver<dim,nstate>::perform_explicit_mesh_adaptation() const
 {
-    std::unique_ptr<MeshAdaptation<dim,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,double>>(this->dg, &(this->all_param.mesh_adaptation_param));
+    std::unique_ptr<MeshAdaptation<dim,nstate,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,nstate,double>>(this->dg, &(this->all_param.mesh_adaptation_param));
     //const int total_adaptation_cycles = this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles;
     
     pcout<<"Running mesh adaptation cycles..."<<std::endl;
@@ -574,7 +574,7 @@ int FlowSolver<dim,nstate>::run() const
             // advance solution
             ode_solver->step_in_time(time_step,false); // pseudotime==false
 
-
+            //computes unsteady residual error estimate
             if(this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles > mesh_adaptation_cycles_completed && 
                 ode_solver->current_iteration % this->all_param.mesh_adaptation_param.time_steps_between_adaptation_cycles == 0 && 
                 ode_solver->current_iteration > 1 &&

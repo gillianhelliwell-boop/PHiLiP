@@ -1,21 +1,22 @@
 #include "mesh_adaptation.h"
 #include <deal.II/hp/refinement.h>
+#include "mesh_error_factory.h"
 
 namespace PHiLiP {
 
-template <int dim, typename real, typename MeshType>
-MeshAdaptation<dim,real,MeshType>::MeshAdaptation(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
+template <int dim, int nstate, typename real, typename MeshType>
+MeshAdaptation<dim,nstate,real,MeshType>::MeshAdaptation(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
     : dg(dg_input)
     , current_mesh_adaptation_cycle(0)
     , mesh_adaptation_param(mesh_adaptation_param_input)
     , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)==0)
     {
-        mesh_error = MeshErrorFactory<dim, 5, real, MeshType> :: create_mesh_error(dg, mesh_adaptation_param);
+        mesh_error = MeshErrorFactory<dim, nstate, real, MeshType> :: create_mesh_error(dg, mesh_adaptation_param);
     }
 
 
-template <int dim, typename real, typename MeshType>
-void MeshAdaptation<dim,real,MeshType>::adapt_mesh()
+template <int dim, int nstate, typename real, typename MeshType>
+void MeshAdaptation<dim, nstate, real,MeshType>::adapt_mesh()
 {
     [[maybe_unused]] unsigned int expected_size_of_cellwise_errors = dg->triangulation->n_active_cells();
     pcout<<"About to call compute_cellwise_errors..."<<std::endl;
@@ -37,8 +38,8 @@ void MeshAdaptation<dim,real,MeshType>::adapt_mesh()
 }
 
 
-template <int dim, typename real, typename MeshType>
-void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_coarsening()
+template <int dim, int nstate, typename real, typename MeshType>
+void MeshAdaptation<dim,nstate,real,MeshType>::fixed_fraction_isotropic_refinement_and_coarsening()
 {
     //=========================================================================================================================================================
     using MeshAdaptationTypeEnum = Parameters::MeshAdaptationParam::MeshAdaptationType;
@@ -126,8 +127,8 @@ void MeshAdaptation<dim,real,MeshType>::fixed_fraction_isotropic_refinement_and_
     dg->assemble_residual (); //why do we need to do this?
 }
 
-template <int dim, typename real, typename MeshType>
-void MeshAdaptation<dim,real,MeshType>::smoothness_sensor_based_hp_refinement()
+template <int dim, int nstate, typename real, typename MeshType>
+void MeshAdaptation<dim,nstate,real,MeshType>::smoothness_sensor_based_hp_refinement()
 {
     const auto mapping = (*(dg->high_order_grid->mapping_fe_field));
     dealii::hp::MappingCollection<dim> mapping_collection(mapping);
@@ -155,7 +156,7 @@ void MeshAdaptation<dim,real,MeshType>::smoothness_sensor_based_hp_refinement()
             std::abort();
         }
 
-        const unsigned int nstate = fe_high.components;
+        //const unsigned int nstate = fe_high.components;
         const unsigned int n_dofs_high = fe_high.dofs_per_cell;
 
         fe_values_collection_volume.reinit (cell, i_quad, i_mapp, i_fele);
@@ -230,8 +231,8 @@ void MeshAdaptation<dim,real,MeshType>::smoothness_sensor_based_hp_refinement()
     }
 }
 
-template <int dim, typename real, typename MeshType>
-void MeshAdaptation<dim,real,MeshType>::mark_airfoil_layers(dealii::DoFHandler<dim> &dof_handler)
+template <int dim, int nstate, typename real, typename MeshType>
+void MeshAdaptation<dim,nstate,real,MeshType>::mark_airfoil_layers(dealii::DoFHandler<dim> &dof_handler)
 {
     using Cell = typename dealii::DoFHandler<dim>::active_cell_iterator;
 
@@ -315,9 +316,25 @@ void MeshAdaptation<dim,real,MeshType>::mark_airfoil_layers(dealii::DoFHandler<d
 }
 
 
-template class MeshAdaptation<PHILIP_DIM, double, dealii::Triangulation<PHILIP_DIM>>;
-template class MeshAdaptation<PHILIP_DIM, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 1, double, dealii::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 2, double, dealii::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 3, double, dealii::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 4, double, dealii::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 5, double, dealii::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 6, double, dealii::Triangulation<PHILIP_DIM>>;
+
+template class MeshAdaptation<PHILIP_DIM, 1, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 2, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 3, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 4, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 5, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 6, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 #if PHILIP_DIM != 1
-template class MeshAdaptation<PHILIP_DIM, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 1, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 2, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 3, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 4, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 5, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshAdaptation<PHILIP_DIM, 6, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 #endif
 } // namespace PHiLiP

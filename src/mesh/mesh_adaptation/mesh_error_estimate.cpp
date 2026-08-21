@@ -30,21 +30,27 @@
 
 namespace PHiLiP {
 
-template <int dim, typename real, typename MeshType>
-MeshErrorEstimateBase<dim, real, MeshType> :: ~MeshErrorEstimateBase(){}
+//template <int dim, int nstate, typename real, typename MeshType>
+//MeshErrorEstimateBase<dim, nstate, real, MeshType> :: ~MeshErrorEstimateBase(){}
 
-template <int dim, typename real, typename MeshType>
-MeshErrorEstimateBase<dim, real, MeshType> :: MeshErrorEstimateBase(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input)
+template <int dim, int nstate, typename real, typename MeshType>
+MeshErrorEstimateBase<dim, nstate, real, MeshType> :: MeshErrorEstimateBase(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
     : dg(dg_input)
+    , mesh_adaptation_param(mesh_adaptation_param_input)
+    , solution_coarse(this->dg->solution)
+    , solution_refinement_state(SolutionRefinementStateEnum::coarse)
+    , mpi_communicator(MPI_COMM_WORLD)
+    , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
     {}
 
-template <int dim, typename real, typename MeshType>
-ResidualErrorEstimate<dim, real, MeshType> :: ResidualErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input)
-    : MeshErrorEstimateBase<dim, real, MeshType> (dg_input)
+
+template <int dim, int nstate, typename real, typename MeshType>
+ResidualErrorEstimate<dim, nstate, real, MeshType> :: ResidualErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
+    : MeshErrorEstimateBase<dim, nstate, real, MeshType> (dg_input, mesh_adaptation_param_input)
     {}
 
-template <int dim, typename real, typename MeshType>
-dealii::Vector<real> ResidualErrorEstimate<dim, real, MeshType> :: compute_cellwise_errors()
+template <int dim, int nstate, typename real, typename MeshType>
+dealii::Vector<real> ResidualErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
     std::vector<dealii::types::global_dof_index> dofs_indices;
     dealii::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
@@ -75,10 +81,10 @@ dealii::Vector<real> ResidualErrorEstimate<dim, real, MeshType> :: compute_cellw
 
 template <int dim, int nstate, typename real, typename MeshType>
 LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
-    : MeshErrorEstimateBase<dim, real, MeshType> (dg_input)
-    , solution_coarse(this->dg->solution)
-    , solution_refinement_state(SolutionRefinementStateEnum::coarse)
-    , mesh_adaptation_param(mesh_adaptation_param_input)
+    : MeshErrorEstimateBase<dim, nstate, real, MeshType> (dg_input, mesh_adaptation_param_input)
+    //, solution_coarse(this->dg->solution)
+    //, solution_refinement_state(SolutionRefinementStateEnum::coarse)
+    //, mesh_adaptation_param(mesh_adaptation_param_input)
     , mpi_communicator(MPI_COMM_WORLD)
     , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
     {}
@@ -90,7 +96,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     //the below code computes the unsteady residual of value epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
     //auto Q_p = this->dg->solution; //save original solution
     //compute residual at p+1
-    reinit();
+    this->reinit();
     this->dg->assemble_residual();
 
     //required variables to calculate P_{p+1}[Res(Q_p)]
@@ -103,6 +109,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
 
     // cell loop to project the residual to p+1 and obtain P_{p+1}[Res(Q_p)]
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
@@ -139,7 +146,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
 
     //Project mesh to p+1 to compute Res(P_{p+1}[Q_p])
     //reinit(); //do we need this?? maybe for residual vector. remove
-    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
+    this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::fine);
     this->dg->assemble_residual(); //assemble residual of projected mesh
     dealii::Vector<real> unsteady_residual(this->dg->triangulation->n_active_cells());
 
@@ -225,14 +232,14 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     }
     
     
-    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);  // restore mesh TURNED OFF FOR TROUBLESHOOTING
+    this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);  // restore mesh TURNED OFF FOR TROUBLESHOOTING
 
     //this->dg->solution = Q_p; //restore solution vector 
     return unsteady_residual;
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-void LESErrorEstimate<dim, nstate, real, MeshType>::reinit()
+void MeshErrorEstimateBase<dim, nstate, real, MeshType>::reinit()
 {
     // reinitilizing all variables after triangulation in the constructor
     solution_coarse = this->dg->solution;
@@ -252,7 +259,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::reinit()
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-void LESErrorEstimate<dim, nstate, real, MeshType>::convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum required_refinement_state)
+void MeshErrorEstimateBase<dim, nstate, real, MeshType>::convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum required_refinement_state)
 {   
     // checks if conversion is needed
     //pcout<<"SolutionRefinementStateEnum: "<<solution_refinement_state<<std::endl;
@@ -280,7 +287,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::convert_dgsolution_to_coarse
 
 
 template <int dim, int nstate, typename real, typename MeshType>
-void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
+void MeshErrorEstimateBase<dim, nstate, real, MeshType>::coarse_to_fine()
 {
     if (this->dg->get_max_fe_degree() >= this->dg->max_degree) 
     {
@@ -337,7 +344,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::coarse_to_fine()
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-void LESErrorEstimate<dim, nstate, real, MeshType>::fine_to_coarse()
+void MeshErrorEstimateBase<dim, nstate, real, MeshType>::fine_to_coarse()
 {
     [[maybe_unused]] unsigned int no_of_cells_before_changing_p = this->dg->triangulation->n_active_cells(); // Used in assert (i.e remains unused in Release mode).
     this->dg->high_order_grid->prepare_for_coarsening_and_refinement();
@@ -454,14 +461,14 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const uns
 }
 
 
-template <int dim, typename real, typename MeshType>
-ExplicitErrorEstimate<dim, real, MeshType> :: ExplicitErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input)
-    : MeshErrorEstimateBase<dim, real, MeshType> (dg_input)
+template <int dim, int nstate, typename real, typename MeshType>
+ExplicitErrorEstimate<dim, nstate, real, MeshType> :: ExplicitErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
+    : MeshErrorEstimateBase<dim, nstate, real, MeshType> (dg_input, mesh_adaptation_param_input)
     {}
 
 
-template <int dim, typename real, typename MeshType>
-dealii::Vector<real> ExplicitErrorEstimate<dim, real, MeshType> :: compute_cellwise_errors()
+template <int dim, int nstate, typename real, typename MeshType>
+dealii::Vector<real> ExplicitErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
     std::vector<dealii::types::global_dof_index> dofs_indices;
     dealii::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
@@ -483,17 +490,17 @@ dealii::Vector<real> ExplicitErrorEstimate<dim, real, MeshType> :: compute_cellw
 
 // constructor
 template <int dim, int nstate, typename real, typename MeshType>
-DualWeightedResidualError<dim, nstate, real, MeshType>::DualWeightedResidualError(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input)
-    : MeshErrorEstimateBase<dim,real,MeshType> (dg_input) 
-    , solution_coarse(this->dg->solution)
-    , solution_refinement_state(SolutionRefinementStateEnum::coarse)
+DualWeightedResidualError<dim, nstate, real, MeshType>::DualWeightedResidualError(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
+    : MeshErrorEstimateBase<dim,nstate,real,MeshType> (dg_input, mesh_adaptation_param_input) 
+    //, solution_coarse(this->dg->solution)
+    //, solution_refinement_state(SolutionRefinementStateEnum::coarse)
     , mpi_communicator(MPI_COMM_WORLD)
     , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
 {
     Assert(this->dg->triangulation->get_mesh_smoothing() == typename dealii::Triangulation<dim>::MeshSmoothing(dealii::Triangulation<dim>::none), 
            dealii::ExcMessage("Mesh smoothing might h-refine cells while computing the dual weighted residual."));
     // storing the original FE degree distribution
-    coarse_fe_index.reinit(this->dg->triangulation->n_active_cells());
+    this->coarse_fe_index.reinit(this->dg->triangulation->n_active_cells());
 
     // create functional
     functional = FunctionalFactory<dim,nstate,real,MeshType>::create_Functional(this->dg->all_parameters->functional_param, this->dg);
@@ -503,7 +510,7 @@ DualWeightedResidualError<dim, nstate, real, MeshType>::DualWeightedResidualErro
     {
         if(cell->is_locally_owned())
         {
-            coarse_fe_index[cell->active_cell_index()] = cell->active_fe_index();
+            this->coarse_fe_index[cell->active_cell_index()] = cell->active_fe_index();
         }
     }
 }
@@ -519,14 +526,15 @@ real DualWeightedResidualError<dim, nstate, real, MeshType>::total_dual_weighted
 template <int dim, int nstate, typename real, typename MeshType>
 dealii::Vector<real> DualWeightedResidualError<dim, nstate, real, MeshType>::compute_cellwise_errors()
 {
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
     dealii::Vector<real> cellwise_errors(this->dg->triangulation->n_active_cells());
     reinit();
-    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
+    convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::fine);
     pcout<<"Computing fine grid adjoint..."<<std::endl;
     fine_grid_adjoint();
     pcout<<"Computing dual weighted residual..."<<std::endl;
     cellwise_errors = dual_weighted_residual();
-    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);
+    convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);
 
     pcout<<"Done computing the goal oriented error indicator."<<std::endl;
     return cellwise_errors;
@@ -537,18 +545,19 @@ template <int dim, int nstate, typename real, typename MeshType>
 void DualWeightedResidualError<dim, nstate, real, MeshType>::reinit()
 {
     // reinitilizing all variables after triangulation in the constructor
-    solution_coarse = this->dg->solution;
-    solution_refinement_state = SolutionRefinementStateEnum::coarse;
+    this->solution_coarse = this->dg->solution;
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
+    this->solution_refinement_state = Base::SolutionRefinementStateEnum::coarse;
 
     // storing the original FE degree distribution
-    coarse_fe_index.reinit(this->dg->triangulation->n_active_cells());
+    this->coarse_fe_index.reinit(this->dg->triangulation->n_active_cells());
     
     // looping over the cells
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if(cell->is_locally_owned())
         {
-            coarse_fe_index[cell->active_cell_index()] = cell->active_fe_index();
+            this->coarse_fe_index[cell->active_cell_index()] = cell->active_fe_index();
         }
     }
 
@@ -562,20 +571,21 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::reinit()
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-void DualWeightedResidualError<dim, nstate, real, MeshType>::convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum required_refinement_state)
+void DualWeightedResidualError<dim, nstate, real, MeshType>::convert_dgsolution_to_coarse_or_fine(typename MeshErrorEstimateBase<dim, nstate, real, MeshType>::SolutionRefinementStateEnum required_refinement_state)
 {   
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
     // checks if conversion is needed
-    if(solution_refinement_state == required_refinement_state)
+    if(this->solution_refinement_state == required_refinement_state)
     {
         return;
     }
     // calls corresponding function for state conversions
-    else if(solution_refinement_state == SolutionRefinementStateEnum::coarse && required_refinement_state == SolutionRefinementStateEnum::fine)
+    else if(this->solution_refinement_state == Base::SolutionRefinementStateEnum::coarse && required_refinement_state == Base::SolutionRefinementStateEnum::fine)
     {
         coarse_to_fine();
     }
     
-    else if(solution_refinement_state == SolutionRefinementStateEnum::fine && required_refinement_state == SolutionRefinementStateEnum::coarse)
+    else if(this->solution_refinement_state == Base::SolutionRefinementStateEnum::fine && required_refinement_state == Base::SolutionRefinementStateEnum::coarse)
     {
         fine_to_coarse();
     }
@@ -601,7 +611,7 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::coarse_to_fine()
     locally_owned_dofs =  this->dg->dof_handler.locally_owned_dofs();
     dealii::DoFTools::extract_locally_relevant_dofs(this->dg->dof_handler, locally_relevant_dofs);
 
-    solution_coarse.update_ghost_values();
+    this->solution_coarse.update_ghost_values();
     
     // Solution Transfer to fine grid
     using VectorType       = typename dealii::LinearAlgebra::distributed::Vector<double>;
@@ -609,7 +619,7 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::coarse_to_fine()
     using SolutionTransfer = typename MeshTypeHelper<MeshType>::template SolutionTransfer<dim,VectorType,DoFHandlerType>;
 
     SolutionTransfer solution_transfer(this->dg->dof_handler);
-    solution_transfer.prepare_for_coarsening_and_refinement(solution_coarse);
+    solution_transfer.prepare_for_coarsening_and_refinement(this->solution_coarse);
 
     this->dg->high_order_grid->prepare_for_coarsening_and_refinement();
 
@@ -629,7 +639,7 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::coarse_to_fine()
 
     if constexpr (std::is_same_v<typename dealii::SolutionTransfer<dim,VectorType,DoFHandlerType>, 
                                  decltype(solution_transfer)>) {
-        solution_transfer.interpolate(solution_coarse, this->dg->solution);
+        solution_transfer.interpolate(this->solution_coarse, this->dg->solution);
     } else {
         solution_transfer.interpolate(this->dg->solution);
     }
@@ -640,7 +650,8 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::coarse_to_fine()
 
     AssertDimension(no_of_cells_before_changing_p, no_of_cells_after_changing_p);
 
-    solution_refinement_state = SolutionRefinementStateEnum::fine;
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
+    this->solution_refinement_state = Base::SolutionRefinementStateEnum::fine;
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
@@ -653,7 +664,7 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::fine_to_coarse()
     {
         if (cell->is_locally_owned()) 
         {
-            cell->set_future_fe_index(coarse_fe_index[cell->active_cell_index()]);
+            cell->set_future_fe_index(this->coarse_fe_index[cell->active_cell_index()]);
         }
     }
 
@@ -663,19 +674,21 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::fine_to_coarse()
     this->dg->allocate_system();
     this->dg->solution.zero_out_ghosts();
 
-    this->dg->solution = solution_coarse;
+    this->dg->solution = this->solution_coarse;
     
     [[maybe_unused]] unsigned int no_of_cells_after_changing_p = this->dg->triangulation->n_active_cells(); // Used when compiled in debug mode (in assert).
 
     AssertDimension(no_of_cells_before_changing_p, no_of_cells_after_changing_p);
 
-    solution_refinement_state = SolutionRefinementStateEnum::coarse;
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
+    this->solution_refinement_state = Base::SolutionRefinementStateEnum::coarse;
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
 dealii::LinearAlgebra::distributed::Vector<real> DualWeightedResidualError<dim, nstate, real, MeshType>::fine_grid_adjoint()
 {
-    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
+    convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::fine);
 
     adjoint_fine = compute_adjoint(derivative_functional_wrt_solution_fine, adjoint_fine);
 
@@ -685,7 +698,8 @@ dealii::LinearAlgebra::distributed::Vector<real> DualWeightedResidualError<dim, 
 template <int dim, int nstate, typename real, typename MeshType>
 dealii::LinearAlgebra::distributed::Vector<real> DualWeightedResidualError<dim, nstate, real, MeshType>::coarse_grid_adjoint()
 {
-    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::coarse);
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
+    convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);
 
     adjoint_coarse = compute_adjoint(derivative_functional_wrt_solution_coarse, adjoint_coarse);
 
@@ -724,7 +738,8 @@ dealii::LinearAlgebra::distributed::Vector<real> DualWeightedResidualError<dim, 
 template <int dim, int nstate, typename real, typename MeshType>
 dealii::Vector<real> DualWeightedResidualError<dim, nstate, real, MeshType>::dual_weighted_residual()
 {
-    convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
+    convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::fine);
 
     // allocate 
     dual_weighted_residual_fine.reinit(this->dg->triangulation->n_active_cells());
@@ -805,12 +820,13 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::output_results_vtk(
     }
 
     // add the data structures specific to this class, check if currently fine or coarse
-    if(solution_refinement_state == SolutionRefinementStateEnum::fine) {
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
+    if(this->solution_refinement_state == Base::SolutionRefinementStateEnum::fine) {
         data_out.add_data_vector(derivative_functional_wrt_solution_fine, derivative_functional_wrt_solution_names, dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_dof_data);
         data_out.add_data_vector(adjoint_fine, adjoint_names, dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_dof_data);
 
         data_out.add_data_vector(dual_weighted_residual_fine, "DWR", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
-    } else if(solution_refinement_state == SolutionRefinementStateEnum::coarse) {
+    } else if(this->solution_refinement_state == Base::SolutionRefinementStateEnum::coarse) {
         data_out.add_data_vector(derivative_functional_wrt_solution_coarse, derivative_functional_wrt_solution_names, dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_dof_data);
         data_out.add_data_vector(adjoint_coarse, adjoint_names, dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_dof_data);
     }
@@ -821,7 +837,7 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::output_results_vtk(
     // data_out.build_patches(*(this->dg->high_order_grid.mapping_fe_field), this->dg->max_degree, dealii::DataOut<dim, dealii::DoFHandler<dim>>::CurvedCellRegion::curved_inner_cells);
     //data_out.build_patches(*(high_order_grid.mapping_fe_field), fe_collection.size(), dealii::DataOut<dim>::CurvedCellRegion::curved_inner_cells);
     std::string filename = "adjoint-" ;
-    if(solution_refinement_state == SolutionRefinementStateEnum::fine)
+    if(this->solution_refinement_state == Base::SolutionRefinementStateEnum::fine)
     filename += dealii::Utilities::int_to_string(cycle, 4) + ".";
     filename += dealii::Utilities::int_to_string(iproc, 4);
     filename += ".vtu";
@@ -834,9 +850,9 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::output_results_vtk(
         for (unsigned int iproc = 0; iproc < dealii::Utilities::MPI::n_mpi_processes(mpi_communicator); ++iproc) 
         {
             std::string fn = "adjoint-";
-            if(solution_refinement_state == SolutionRefinementStateEnum::fine)
+            if(this->solution_refinement_state == Base::SolutionRefinementStateEnum::fine)
                 fn += "fine-";
-            else if(solution_refinement_state == SolutionRefinementStateEnum::coarse)
+            else if(this->solution_refinement_state == Base::SolutionRefinementStateEnum::coarse)
                 fn += "coarse-";
             fn += dealii::Utilities::int_to_string(dim, 1) + "D-";
             fn += dealii::Utilities::int_to_string(cycle, 4) + ".";
@@ -845,9 +861,9 @@ void DualWeightedResidualError<dim, nstate, real, MeshType>::output_results_vtk(
             filenames.push_back(fn);
         }
         std::string master_fn = "adjoint-";
-        if(solution_refinement_state == SolutionRefinementStateEnum::fine)
+        if(this->solution_refinement_state == Base::SolutionRefinementStateEnum::fine)
             master_fn += "fine-";
-        else if(solution_refinement_state == SolutionRefinementStateEnum::coarse)
+        else if(this->solution_refinement_state == Base::SolutionRefinementStateEnum::coarse)
             master_fn += "coarse-";
         master_fn += dealii::Utilities::int_to_string(dim, 1) +"D-";
         master_fn += dealii::Utilities::int_to_string(cycle, 4) + ".pvtu";
@@ -945,37 +961,89 @@ std::vector< real > project_function(
     return function_coeff_out;
 
 }
-template class MeshErrorEstimateBase<PHILIP_DIM, double, dealii::Triangulation<PHILIP_DIM>>;
-template class MeshErrorEstimateBase<PHILIP_DIM, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 1, double, dealii::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 2, double, dealii::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 3, double, dealii::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 4, double, dealii::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 5, double, dealii::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 6, double, dealii::Triangulation<PHILIP_DIM>>;
+
+template class MeshErrorEstimateBase<PHILIP_DIM, 1, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 2, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 3, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 4, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 5, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 6, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 #if PHILIP_DIM != 1
-template class MeshErrorEstimateBase<PHILIP_DIM, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 1, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 2, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 3, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 4, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 5, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class MeshErrorEstimateBase<PHILIP_DIM, 6, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 #endif
 
 
-template class ResidualErrorEstimate<PHILIP_DIM, double, dealii::Triangulation<PHILIP_DIM>>;
-template class ResidualErrorEstimate<PHILIP_DIM, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+
+template class ResidualErrorEstimate<PHILIP_DIM, 1, double, dealii::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 2, double, dealii::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 3, double, dealii::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 4, double, dealii::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 5, double, dealii::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 6, double, dealii::Triangulation<PHILIP_DIM>>;
+
+template class ResidualErrorEstimate<PHILIP_DIM, 1, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 2, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 3, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 4, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 5, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 6, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 #if PHILIP_DIM != 1
-template class ResidualErrorEstimate<PHILIP_DIM, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 1, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 2, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 3, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 4, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 5, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ResidualErrorEstimate<PHILIP_DIM, 6, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 #endif
 
 
-template class ExplicitErrorEstimate<PHILIP_DIM, double, dealii::Triangulation<PHILIP_DIM>>;
-template class ExplicitErrorEstimate<PHILIP_DIM, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 1, double, dealii::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 2, double, dealii::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 3, double, dealii::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 4, double, dealii::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 5, double, dealii::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 6, double, dealii::Triangulation<PHILIP_DIM>>;
+
+template class ExplicitErrorEstimate<PHILIP_DIM, 1, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 2, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 3, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 4, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 5, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 6, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 #if PHILIP_DIM != 1
-template class ExplicitErrorEstimate<PHILIP_DIM, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 1, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 2, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 3, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 4, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 5, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class ExplicitErrorEstimate<PHILIP_DIM, 6, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 #endif
+
 
 template class LESErrorEstimate <PHILIP_DIM, 1, double, dealii::Triangulation<PHILIP_DIM>>;
 template class LESErrorEstimate <PHILIP_DIM, 2, double, dealii::Triangulation<PHILIP_DIM>>;
 template class LESErrorEstimate <PHILIP_DIM, 3, double, dealii::Triangulation<PHILIP_DIM>>;
 template class LESErrorEstimate <PHILIP_DIM, 4, double, dealii::Triangulation<PHILIP_DIM>>;
 template class LESErrorEstimate <PHILIP_DIM, 5, double, dealii::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 6, double, dealii::Triangulation<PHILIP_DIM>>;
 
 template class LESErrorEstimate <PHILIP_DIM, 1, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 template class LESErrorEstimate <PHILIP_DIM, 2, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 template class LESErrorEstimate <PHILIP_DIM, 3, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 template class LESErrorEstimate <PHILIP_DIM, 4, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 template class LESErrorEstimate <PHILIP_DIM, 5, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 6, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 
 #if PHILIP_DIM!=1
 template class LESErrorEstimate <PHILIP_DIM, 1, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
@@ -983,6 +1051,7 @@ template class LESErrorEstimate <PHILIP_DIM, 2, double, dealii::parallel::distri
 template class LESErrorEstimate <PHILIP_DIM, 3, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 template class LESErrorEstimate <PHILIP_DIM, 4, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 template class LESErrorEstimate <PHILIP_DIM, 5, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class LESErrorEstimate <PHILIP_DIM, 6, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 #endif
 
 
@@ -991,12 +1060,14 @@ template class DualWeightedResidualError <PHILIP_DIM, 2, double, dealii::Triangu
 template class DualWeightedResidualError <PHILIP_DIM, 3, double, dealii::Triangulation<PHILIP_DIM>>;
 template class DualWeightedResidualError <PHILIP_DIM, 4, double, dealii::Triangulation<PHILIP_DIM>>;
 template class DualWeightedResidualError <PHILIP_DIM, 5, double, dealii::Triangulation<PHILIP_DIM>>;
+template class DualWeightedResidualError <PHILIP_DIM, 6, double, dealii::Triangulation<PHILIP_DIM>>;
 
 template class DualWeightedResidualError <PHILIP_DIM, 1, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 template class DualWeightedResidualError <PHILIP_DIM, 2, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 template class DualWeightedResidualError <PHILIP_DIM, 3, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 template class DualWeightedResidualError <PHILIP_DIM, 4, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 template class DualWeightedResidualError <PHILIP_DIM, 5, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class DualWeightedResidualError <PHILIP_DIM, 6, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
 
 #if PHILIP_DIM!=1
 template class DualWeightedResidualError <PHILIP_DIM, 1, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
@@ -1004,6 +1075,7 @@ template class DualWeightedResidualError <PHILIP_DIM, 2, double, dealii::paralle
 template class DualWeightedResidualError <PHILIP_DIM, 3, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 template class DualWeightedResidualError <PHILIP_DIM, 4, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 template class DualWeightedResidualError <PHILIP_DIM, 5, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class DualWeightedResidualError <PHILIP_DIM, 6, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 #endif
 
 } // PHiLiP namespace

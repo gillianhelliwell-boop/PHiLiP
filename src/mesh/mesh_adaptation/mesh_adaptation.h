@@ -1,6 +1,7 @@
 #ifndef __MESHADAPTATION_H__
 #define __MESHADAPTATION_H__
 
+
 #include "parameters/all_parameters.h"
 #include "dg/dg.h"
 #include "mesh_error_estimate.h"
@@ -15,9 +16,9 @@ namespace PHiLiP {
 
 
 #if PHILIP_DIM==1
-template <int dim, typename real, typename MeshType = dealii::Triangulation<dim>>
+template <int dim, int nstate, typename real, typename MeshType = dealii::Triangulation<dim>>
 #else
-template <int dim, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
+template <int dim, int nstate, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
 #endif
 
 /** Contains functions for mesh adaptation. It supports residual based and goal-oriented hp-adaptation with fixed fraction coarsening and refinement. 
@@ -34,7 +35,7 @@ public:
     ~MeshAdaptation(){};
 
     /// Pointer to the error estimator class.
-    std::unique_ptr<MeshErrorEstimateBase<dim, real, MeshType>> mesh_error;
+    std::unique_ptr<MeshErrorEstimateBase<dim, nstate, real, MeshType>> mesh_error;
 
     /// Pointer to DGBase.
     std::shared_ptr<DGBase<dim,real,MeshType>> dg;
@@ -55,9 +56,9 @@ public:
     //}
 
     // Call this whenever you just need to read the data (super fast, no re-computation):
-    const dealii::Vector<real>& get_cellwise_errors() const {
-        return cellwise_errors_cache;
-    }
+    //const dealii::Vector<real>& get_cellwise_errors() const {
+      //  return cellwise_errors_cache;
+    //}
 
     /// Stores errors in each cell
     dealii::Vector<real> cellwise_errors;
@@ -80,6 +81,9 @@ protected:
 
     /// Parallel std::cout.
     dealii::ConditionalOStream pcout;
+
+    //save member variable where create_mesh_error stores cellwise errors
+    //std::unique_ptr<MeshErrorEstimateBase<dim, nstate, real, MeshType>> mesh_error;
 
 };
 
