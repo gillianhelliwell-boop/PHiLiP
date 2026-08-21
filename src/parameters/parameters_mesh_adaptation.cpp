@@ -37,6 +37,12 @@ void MeshAdaptationParam::declare_parameters (dealii::ParameterHandler &prm)
         prm.declare_entry("use_LES_mesh_adaptation","false",
                           dealii::Patterns::Bool(),
                           "Flag to use goal oriented mesh adaptation. False by default.");
+        prm.declare_entry("use_fidkowski_mesh_adaptation","false",
+                          dealii::Patterns::Bool(),
+                          "Flag to use goal oriented mesh adaptation. False by default.");
+        prm.declare_entry("use_entropy_gen_mesh_adaptation","false",
+                          dealii::Patterns::Bool(),
+                          "Flag to use goal oriented mesh adaptation. False by default.");
         prm.declare_entry("mesh_adaptation_start_time","0.0",
                               dealii::Patterns::Double(0.0,1e5),
                               "Time at which to begin mesh adaptation.");
@@ -124,6 +130,8 @@ void MeshAdaptationParam::parse_parameters (dealii::ParameterHandler &prm)
         use_goal_oriented_mesh_adaptation = prm.get_bool("use_goal_oriented_mesh_adaptation");
 
         use_LES_mesh_adaptation = prm.get_bool("use_LES_mesh_adaptation");
+        use_fidkowski_mesh_adaptation = prm.get_bool("use_fidkowski_mesh_adaptation");
+        use_entropy_gen_mesh_adaptation = prm.get_bool("use_entropy_gen_mesh_adaptation");
         mesh_adaptation_start_time = prm.get_double("mesh_adaptation_start_time");
         mesh_adaptation_end_time = prm.get_double("mesh_adaptation_end_time");
 

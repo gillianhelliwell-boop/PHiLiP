@@ -27,6 +27,7 @@
 #include "physics/physics.h"
 #include "linear_solver/linear_solver.h"
 #include "post_processor/physics_post_processor.h"
+#include "physics/physics_factory.h"
 
 namespace PHiLiP {
 
@@ -80,11 +81,271 @@ dealii::Vector<real> ResidualErrorEstimate<dim, nstate, real, MeshType> :: compu
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
+FidkowskiErrorEstimate<dim, nstate, real, MeshType> :: FidkowskiErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
+    : MeshErrorEstimateBase<dim, nstate, real, MeshType> (dg_input, mesh_adaptation_param_input)
+    , mpi_communicator(MPI_COMM_WORLD)
+    , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
+    {}
+
+
+template <int dim, int nstate, typename real, typename MeshType>
+dealii::Vector<real> FidkowskiErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
+{
+    //the goal here is to compute our variation of the fidkowski entropy adjoint error estimate.
+    //the following steps are required: (1) save solution at p (2) project solution from p to p+1 using project_function
+    // (3) project the mesh to p+1 and compute the entropy variables at p+1 (4) dot product the residual of projected solution and entropy variables
+
+    // Declare physics pointer --> should probably initialize this in class constructor like dg pointer then pass it through
+    std::shared_ptr<PHiLiP::Physics::NavierStokes<dim,nstate, real> > navier_stokes_physics;
+
+    // Initialize (copied from periodic_turbulence line 49)
+    using PDE_enum = Parameters::AllParameters::PartialDifferentialEquation;
+    PHiLiP::Parameters::AllParameters parameters_navier_stokes = *(this->dg->all_parameters);
+    parameters_navier_stokes.pde_type = PDE_enum::navier_stokes;
+    navier_stokes_physics = std::dynamic_pointer_cast<PHiLiP::Physics::NavierStokes<dim, nstate, real>>(
+                PHiLiP::Physics::PhysicsFactory<dim,nstate,real>::create_Physics(&parameters_navier_stokes));
+
+    const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
+    std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
+    
+    dealii::LinearAlgebra::distributed::Vector<double> original_solution = this->dg->solution;
+    dealii::Vector<real> adjoint_residual(this->dg->triangulation->n_active_cells());
+    std::vector<std::vector<real>> projected_solution(this->dg->triangulation->n_active_cells());
+
+    for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
+    {
+        if(!cell->is_locally_owned())  continue;
+        const unsigned int fe_index_curr_cell = cell->active_fe_index();
+        if ((fe_index_curr_cell+1) == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation)
+        {   adjoint_residual[cell->active_cell_index()]= 0.0;
+            continue; }
+
+        const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
+        const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
+        current_dofs_indices.resize(n_dofs_curr_cell);
+        cell->get_dof_indices(current_dofs_indices);
+        
+
+        //(2) project solution to p+1
+        std::vector<real> p_order_solution(n_dofs_curr_cell);
+        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
+        {
+            p_order_solution[idof] = this->dg->solution[current_dofs_indices[idof]];
+        }
+         
+        //gather inputs for project_function(), and then project the solution of active cell to p+1
+        const dealii::FESystem<dim,dim> &fe_input = this->dg->fe_collection[fe_index_curr_cell];
+        const dealii::FESystem<dim,dim> &fe_output = this->dg->fe_collection[fe_index_curr_cell + 1];  
+        const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell + 2); //notation is +2 to account for Gauss 2n-1 rule
+
+        projected_solution[cell->active_cell_index()] = project_function(p_order_solution, fe_input, fe_output, projection_quadrature); 
+
+        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
+        {
+            this->dg->solution[current_dofs_indices[idof]] = projected_solution[cell->active_cell_index()][idof];
+        }
+        
+    }
+
+    //(3) project the mesh to p+1 and compute the entropy variables at p+1
+    this -> reinit();
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
+    this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::fine);
+    this -> dg -> assemble_residual();
+
+    for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
+        {
+        if(!cell->is_locally_owned()) continue;
+        const unsigned int fe_index_curr_cell = cell->active_fe_index();
+        if ((fe_index_curr_cell+1) == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation)
+        {   adjoint_residual[cell->active_cell_index()]= 0.0;
+            continue; }
+
+
+        const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
+        const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
+        current_dofs_indices.resize(n_dofs_curr_cell);
+        cell->get_dof_indices(current_dofs_indices);
+        const unsigned int n_quad_pts  = this->dg->volume_quadrature_collection[fe_index_curr_cell].size();
+        const unsigned int n_shape_fns = n_dofs_curr_cell / nstate;
+
+        std::array<std::vector<real>,nstate> soln_coeff;
+        std::array<std::vector<real>,nstate> rhs_coeff;
+        const unsigned int init_grid_degree = this->dg->high_order_grid->fe_system.tensor_degree();
+        dealii::Quadrature<1> vol_quad_equidistant_1D = dealii::QIterated<1>(dealii::QTrapez<1>(),fe_index_curr_cell);
+        OPERATOR::basis_functions<dim,2*dim> soln_basis(1, fe_index_curr_cell, init_grid_degree); 
+        OPERATOR::vol_projection_operator<dim,2*dim> soln_basis_projection_oper(1, fe_index_curr_cell, this->dg->max_grid_degree);
+        soln_basis.build_1D_volume_operator(this->dg->oneD_fe_collection_1state[fe_index_curr_cell], vol_quad_equidistant_1D);
+        soln_basis.build_1D_gradient_operator(this->dg->oneD_fe_collection_1state[fe_index_curr_cell], vol_quad_equidistant_1D); 
+        soln_basis_projection_oper.build_1D_volume_operator(this->dg->oneD_fe_collection_1state[fe_index_curr_cell], vol_quad_equidistant_1D);
+
+        for (unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof) {
+            const unsigned int istate = (cell->get_fe().system_to_component_index(idof)).first;
+            const unsigned int ishape = (cell->get_fe().system_to_component_index(idof)).second;
+            // allocate
+            if(ishape == 0){
+                soln_coeff[istate].resize(n_shape_fns);
+                rhs_coeff[istate].resize(n_shape_fns);
+            }
+            // solve
+            soln_coeff[istate][ishape] = original_solution[current_dofs_indices[idof]];
+            rhs_coeff[istate][ishape] = this->dg->right_hand_side(current_dofs_indices[idof]);
+
+            //project onto quadrature points
+        }
+
+        std::array<std::vector<double>,nstate> soln_at_q;
+        for(int istate=0; istate<nstate; istate++){
+            soln_at_q[istate].resize(n_quad_pts);
+
+                // Interpolate soln coeff to volume cubature nodes.
+            soln_basis.matrix_vector_mult_1D(soln_coeff[istate], soln_at_q[istate],
+                                                soln_basis.oneD_vol_operator);
+            }
+        
+        std::vector<std::array<real,nstate>> entropy_var_at_q(n_quad_pts);
+      
+        for (unsigned int iquad=0; iquad<n_quad_pts; ++iquad)
+        {
+            
+            //std::array<real, nstate> entropy_variables;
+            std::array<real, nstate> solution;
+            for (unsigned int istate=0; istate<nstate; ++istate)
+            {
+                solution[istate] = soln_at_q[istate][iquad];
+            }
+            entropy_var_at_q[iquad] = navier_stokes_physics->compute_entropy_variables(solution);
+
+            
+        }
+        std::array<std::vector<real>,nstate> entropy_var_coeff;
+        std::array<std::vector<real>,nstate> entropy_var_at_q_bystate;
+        for (unsigned int istate=0; istate<nstate; ++istate) {
+            entropy_var_at_q_bystate[istate].resize(n_quad_pts);
+            entropy_var_coeff[istate].resize(n_shape_fns);
+            for (unsigned int iquad=0; iquad<n_quad_pts; ++iquad) {
+                entropy_var_at_q_bystate[istate][iquad] = entropy_var_at_q[iquad][istate];
+            }
+            soln_basis_projection_oper.matrix_vector_mult_1D(entropy_var_at_q_bystate[istate],
+                                                            entropy_var_coeff[istate],
+                                                            soln_basis_projection_oper.oneD_vol_operator);
+        }
+
+        real adjoint_residual_sum = 0.0;
+        for (unsigned int istate=0; istate<nstate; ++istate) {
+            std::vector<real> rhs_at_state(n_shape_fns);
+            std::vector<real> entropy_var_at_state(n_shape_fns);
+            real product_at_state = 0.0;
+            rhs_at_state = rhs_coeff[istate];
+            entropy_var_at_state = entropy_var_coeff[istate];
+
+
+
+           //for (unsigned int ishape=0; ishape<n_shape_fns; ++ishape) {
+               // entropy_var_at_state[ishape] = std::abs(entropy_var_at_state[ishape]);
+                //pcout<<"entropy variables at state ["<<istate<<"]: and shape function: "<<ishape<<"value: "<<entropy_var_at_state[ishape]<<std::endl;
+               // rhs_at_state[ishape] = std::abs(rhs_at_state[ishape]); } 
+
+            product_at_state = std::inner_product(entropy_var_at_state.begin(), entropy_var_at_state.end(), rhs_at_state.begin(), 0.0);
+            adjoint_residual_sum += std::abs(product_at_state);
+        } 
+        adjoint_residual[cell->active_cell_index()] = adjoint_residual_sum; }
+    this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);
+    pcout<<"computed adjoint residual"<<std::endl;
+    return adjoint_residual;
+
+}
+
+
+template <int dim, int nstate, typename real, typename MeshType>
+EntropyGenErrorEstimate<dim, nstate, real, MeshType> :: EntropyGenErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
+    : MeshErrorEstimateBase<dim, nstate, real, MeshType> (dg_input, mesh_adaptation_param_input)
+    , mpi_communicator(MPI_COMM_WORLD)
+    , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
+    {}
+
+
+template <int dim, int nstate, typename real, typename MeshType>
+dealii::Vector<real> EntropyGenErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
+{
+       // Declare physics pointer --> should probably initialize this in class constructor like dg pointer then pass it through
+    std::shared_ptr<PHiLiP::Physics::NavierStokes<dim,nstate, real> > navier_stokes_physics;
+
+    // Initialize (copied from periodic_turbulence line 49)
+    using PDE_enum = Parameters::AllParameters::PartialDifferentialEquation;
+    PHiLiP::Parameters::AllParameters parameters_navier_stokes = *(this->dg->all_parameters);
+    parameters_navier_stokes.pde_type = PDE_enum::navier_stokes;
+    navier_stokes_physics = std::dynamic_pointer_cast<PHiLiP::Physics::NavierStokes<dim, nstate, real>>(
+                PHiLiP::Physics::PhysicsFactory<dim,nstate,real>::create_Physics(&parameters_navier_stokes));
+
+
+    
+    this->reinit();
+    //convert_dgsolution_to_coarse_or_fine(SolutionRefinementStateEnum::fine);
+    const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
+    std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
+    
+    std::cout << "n_active_cells at adjoint_residual construction: " 
+          << this->dg->triangulation->n_active_cells() << std::endl;
+    dealii::Vector<real> adjoint_residual(this->dg->triangulation->n_active_cells());
+    if constexpr (nstate == dim + 2)
+    { 
+    for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
+    {
+        if(!cell->is_locally_owned()) continue;
+        const unsigned int fe_index_curr_cell = cell->active_fe_index();
+        if ((fe_index_curr_cell+1) == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation)
+        {   adjoint_residual[cell->active_cell_index()]= 0.0;
+            continue; }
+
+        const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
+        const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
+        current_dofs_indices.resize(n_dofs_curr_cell);
+        cell->get_dof_indices(current_dofs_indices);
+
+        
+        std::array<std::vector<real>, nstate> solution_per_state;
+        const unsigned int n_shape_fns = n_dofs_curr_cell / nstate;
+
+        for (unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof) {
+            const unsigned int istate = (cell->get_fe().system_to_component_index(idof)).first;
+            const unsigned int ishape = (cell->get_fe().system_to_component_index(idof)).second;
+            // allocate
+            if(ishape == 0){
+                solution_per_state[istate].resize(n_shape_fns);
+            }
+            // solve
+            solution_per_state[istate][ishape] = this->dg->solution(current_dofs_indices[idof]);
+        }
+
+        const unsigned int n_quad_pts  = this->dg->volume_quadrature_collection[fe_index_curr_cell].size();
+        std::vector<real> entropy_at_q(n_quad_pts);
+        real entropy_per_cell = 0.0;
+      
+        for (unsigned int iquad=0; iquad<n_quad_pts; ++iquad)
+        {
+            //std::array<real, nstate> entropy_variables;
+            std::array<real, nstate> solution;
+            for (unsigned int istate=0; istate<nstate; ++istate)
+            {
+                solution[istate] = solution_per_state[istate][iquad];
+            }
+            entropy_per_cell += (navier_stokes_physics->compute_entropy_measure(solution)) - navier_stokes_physics->entropy_inf;
+        }        
+
+        adjoint_residual[cell->active_cell_index()] = entropy_per_cell;
+
+
+        }
+
+    }
+    return adjoint_residual;
+}
+
+
+template <int dim, int nstate, typename real, typename MeshType>
 LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
     : MeshErrorEstimateBase<dim, nstate, real, MeshType> (dg_input, mesh_adaptation_param_input)
-    //, solution_coarse(this->dg->solution)
-    //, solution_refinement_state(SolutionRefinementStateEnum::coarse)
-    //, mesh_adaptation_param(mesh_adaptation_param_input)
     , mpi_communicator(MPI_COMM_WORLD)
     , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
     {}
@@ -370,7 +631,189 @@ void MeshErrorEstimateBase<dim, nstate, real, MeshType>::fine_to_coarse()
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
+void EntropyGenErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors)
+{
+    dealii::DataOut<dim, dealii::DoFHandler<dim>> data_out;
+    data_out.attach_dof_handler(this->dg->dof_handler);
+
+    const std::unique_ptr< dealii::DataPostprocessor<dim> > post_processor = Postprocess::PostprocessorFactory<dim>::create_Postprocessor(this->dg->all_parameters);
+    data_out.add_data_vector(this->dg->solution, *post_processor);
+
+    dealii::Vector<float> subdomain(this->dg->triangulation->n_active_cells());
+    for (unsigned int i = 0; i < subdomain.size(); ++i) 
+    {
+        subdomain(i) = this->dg->triangulation->locally_owned_subdomain();
+    }
+    data_out.add_data_vector(subdomain, "subdomain", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+
+    //get parameter compute_cellwise_errors
+    
+    //output error estimate
+    //dealii::Vector<real> error_estimate = compute_cellwise_errors();
+    //cellwise_errors = meshadaptation->cellwise_errors;
+    data_out.add_data_vector(cellwise_errors, "error_estimate", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+
+    // Output the polynomial degree in each cell
+    std::vector<unsigned int> active_fe_indices;
+    this->dg->dof_handler.get_active_fe_indices(active_fe_indices);
+    dealii::Vector<double> active_fe_indices_dealiivector(active_fe_indices.begin(), active_fe_indices.end());
+    dealii::Vector<double> cell_poly_degree = active_fe_indices_dealiivector;
+
+    data_out.add_data_vector(active_fe_indices_dealiivector, "PolynomialDegree", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+
+    std::vector<std::string> residual_names;
+    for(int s=0;s<nstate;++s) 
+    {
+        std::string varname = "residual" + dealii::Utilities::int_to_string(s,1);
+        residual_names.push_back(varname);
+    }
+
+    data_out.add_data_vector(this->dg->right_hand_side, residual_names, dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_dof_data);
+
+    // set names of data to be output in the vtu file.
+    std::vector<std::string> derivative_functional_wrt_solution_names;
+    for(int s=0;s<nstate;++s) 
+    {
+        std::string varname = "derivative_functional_wrt_solution" + dealii::Utilities::int_to_string(s,1);
+        derivative_functional_wrt_solution_names.push_back(varname);
+    }
+
+        //process and finalize the data
+    const dealii::Mapping<dim> &mapping = (*(this->dg->high_order_grid->mapping_fe_field));
+    const int n_subdivisions = this->dg->get_max_fe_degree();
+    data_out.build_patches(mapping, n_subdivisions, 
+        dealii::DataOut<dim,dealii::DoFHandler<dim>>::CurvedCellRegion::curved_inner_cells);
+   
+
+    const int iproc = dealii::Utilities::MPI::this_mpi_process(mpi_communicator);
+    std::string filename_prefix = "LESErrorEstimate";
+
+    // vtu filename
+    std::string filename = this->dg->all_parameters->solution_vtk_files_directory_name 
+                        + "/" + filename_prefix + "-" 
+                        + dealii::Utilities::int_to_string(dim, 1) + "D-";
+    filename += dealii::Utilities::int_to_string(cycle, 4) + ".";
+    filename += dealii::Utilities::int_to_string(iproc, 4);
+    filename += ".vtu";
+    std::ofstream output(filename);
+    data_out.write_vtu(output);
+
+    if (iproc == 0) {
+        std::vector<std::string> filenames;
+        for (unsigned int iproc = 0; iproc < dealii::Utilities::MPI::n_mpi_processes(mpi_communicator); ++iproc) {
+            // must match vtu filename exactly
+            std::string fn = filename_prefix + "-" 
+                        + dealii::Utilities::int_to_string(dim, 1) + "D-";
+            fn += dealii::Utilities::int_to_string(cycle, 4) + ".";
+            fn += dealii::Utilities::int_to_string(iproc, 4);
+            fn += ".vtu";
+            filenames.push_back(fn);
+        }
+        // pvtu master file
+        std::string master_fn = this->dg->all_parameters->solution_vtk_files_directory_name 
+                            + "/" + filename_prefix + "-" 
+                            + dealii::Utilities::int_to_string(dim, 1) + "D-";
+        master_fn += dealii::Utilities::int_to_string(cycle, 4) + ".pvtu";
+        std::ofstream master_output(master_fn);
+        data_out.write_pvtu_record(master_output, filenames);
+    }
+    
+
+}
+
+template <int dim, int nstate, typename real, typename MeshType>
 void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors)
+{
+    dealii::DataOut<dim, dealii::DoFHandler<dim>> data_out;
+    data_out.attach_dof_handler(this->dg->dof_handler);
+
+    const std::unique_ptr< dealii::DataPostprocessor<dim> > post_processor = Postprocess::PostprocessorFactory<dim>::create_Postprocessor(this->dg->all_parameters);
+    data_out.add_data_vector(this->dg->solution, *post_processor);
+
+    dealii::Vector<float> subdomain(this->dg->triangulation->n_active_cells());
+    for (unsigned int i = 0; i < subdomain.size(); ++i) 
+    {
+        subdomain(i) = this->dg->triangulation->locally_owned_subdomain();
+    }
+    data_out.add_data_vector(subdomain, "subdomain", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+
+    //get parameter compute_cellwise_errors
+    
+    //output error estimate
+    //dealii::Vector<real> error_estimate = compute_cellwise_errors();
+    //cellwise_errors = meshadaptation->cellwise_errors;
+    data_out.add_data_vector(cellwise_errors, "error_estimate", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+
+    // Output the polynomial degree in each cell
+    std::vector<unsigned int> active_fe_indices;
+    this->dg->dof_handler.get_active_fe_indices(active_fe_indices);
+    dealii::Vector<double> active_fe_indices_dealiivector(active_fe_indices.begin(), active_fe_indices.end());
+    dealii::Vector<double> cell_poly_degree = active_fe_indices_dealiivector;
+
+    data_out.add_data_vector(active_fe_indices_dealiivector, "PolynomialDegree", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+
+    std::vector<std::string> residual_names;
+    for(int s=0;s<nstate;++s) 
+    {
+        std::string varname = "residual" + dealii::Utilities::int_to_string(s,1);
+        residual_names.push_back(varname);
+    }
+
+    data_out.add_data_vector(this->dg->right_hand_side, residual_names, dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_dof_data);
+
+    // set names of data to be output in the vtu file.
+    std::vector<std::string> derivative_functional_wrt_solution_names;
+    for(int s=0;s<nstate;++s) 
+    {
+        std::string varname = "derivative_functional_wrt_solution" + dealii::Utilities::int_to_string(s,1);
+        derivative_functional_wrt_solution_names.push_back(varname);
+    }
+
+        //process and finalize the data
+    const dealii::Mapping<dim> &mapping = (*(this->dg->high_order_grid->mapping_fe_field));
+    const int n_subdivisions = this->dg->get_max_fe_degree();
+    data_out.build_patches(mapping, n_subdivisions, 
+        dealii::DataOut<dim,dealii::DoFHandler<dim>>::CurvedCellRegion::curved_inner_cells);
+   
+
+    const int iproc = dealii::Utilities::MPI::this_mpi_process(mpi_communicator);
+    std::string filename_prefix = "LESErrorEstimate";
+
+    // vtu filename
+    std::string filename = this->dg->all_parameters->solution_vtk_files_directory_name 
+                        + "/" + filename_prefix + "-" 
+                        + dealii::Utilities::int_to_string(dim, 1) + "D-";
+    filename += dealii::Utilities::int_to_string(cycle, 4) + ".";
+    filename += dealii::Utilities::int_to_string(iproc, 4);
+    filename += ".vtu";
+    std::ofstream output(filename);
+    data_out.write_vtu(output);
+
+    if (iproc == 0) {
+        std::vector<std::string> filenames;
+        for (unsigned int iproc = 0; iproc < dealii::Utilities::MPI::n_mpi_processes(mpi_communicator); ++iproc) {
+            // must match vtu filename exactly
+            std::string fn = filename_prefix + "-" 
+                        + dealii::Utilities::int_to_string(dim, 1) + "D-";
+            fn += dealii::Utilities::int_to_string(cycle, 4) + ".";
+            fn += dealii::Utilities::int_to_string(iproc, 4);
+            fn += ".vtu";
+            filenames.push_back(fn);
+        }
+        // pvtu master file
+        std::string master_fn = this->dg->all_parameters->solution_vtk_files_directory_name 
+                            + "/" + filename_prefix + "-" 
+                            + dealii::Utilities::int_to_string(dim, 1) + "D-";
+        master_fn += dealii::Utilities::int_to_string(cycle, 4) + ".pvtu";
+        std::ofstream master_output(master_fn);
+        data_out.write_pvtu_record(master_output, filenames);
+    }
+    
+
+}
+
+template <int dim, int nstate, typename real, typename MeshType>
+void FidkowskiErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors)
 {
     dealii::DataOut<dim, dealii::DoFHandler<dim>> data_out;
     data_out.attach_dof_handler(this->dg->dof_handler);
@@ -1054,6 +1497,59 @@ template class LESErrorEstimate <PHILIP_DIM, 5, double, dealii::parallel::distri
 template class LESErrorEstimate <PHILIP_DIM, 6, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
 #endif
 
+
+// Standard Triangulation
+template class EntropyGenErrorEstimate<PHILIP_DIM, 1, double, dealii::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 2, double, dealii::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 3, double, dealii::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 4, double, dealii::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 5, double, dealii::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 6, double, dealii::Triangulation<PHILIP_DIM>>;
+
+// Shared Triangulation
+template class EntropyGenErrorEstimate<PHILIP_DIM, 1, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 2, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 3, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 4, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 5, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 6, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+
+#if PHILIP_DIM != 1
+// Distributed Triangulation for 2D/3D
+template class EntropyGenErrorEstimate<PHILIP_DIM, 1, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 2, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 3, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 4, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 5, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class EntropyGenErrorEstimate<PHILIP_DIM, 6, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+#endif
+
+
+// Standard Triangulation
+template class FidkowskiErrorEstimate<PHILIP_DIM, 1, double, dealii::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 2, double, dealii::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 3, double, dealii::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 4, double, dealii::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 5, double, dealii::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 6, double, dealii::Triangulation<PHILIP_DIM>>;
+
+// Shared Triangulation
+template class FidkowskiErrorEstimate<PHILIP_DIM, 1, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 2, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 3, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 4, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 5, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 6, double, dealii::parallel::shared::Triangulation<PHILIP_DIM>>;
+
+#if PHILIP_DIM != 1
+// Distributed Triangulation for 2D/3D
+template class FidkowskiErrorEstimate<PHILIP_DIM, 1, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 2, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 3, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 4, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 5, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+template class FidkowskiErrorEstimate<PHILIP_DIM, 6, double, dealii::parallel::distributed::Triangulation<PHILIP_DIM>>;
+#endif
 
 template class DualWeightedResidualError <PHILIP_DIM, 1, double, dealii::Triangulation<PHILIP_DIM>>;
 template class DualWeightedResidualError <PHILIP_DIM, 2, double, dealii::Triangulation<PHILIP_DIM>>;

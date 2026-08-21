@@ -19,6 +19,7 @@
 #include <deal.II/fe/fe_values.h>
 #include "functional/functional.h"
 #include "physics/physics.h"
+#include "physics/euler.h"
 
 namespace PHiLiP {
     
@@ -315,6 +316,66 @@ public:
 
     /// Destructor
     ~LESErrorEstimate() {};
+    protected:
+        MPI_Comm mpi_communicator;
+        dealii::ConditionalOStream pcout; ///< Parallel std::cout that only outputs on mpi_rank==0
+
+};
+
+#if PHILIP_DIM==1
+template <int dim, int nstate, typename real, typename MeshType = dealii::Triangulation<dim>>
+#else
+template <int dim, int nstate, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
+#endif
+class EntropyGenErrorEstimate : public MeshErrorEstimateBase <dim, nstate, real, MeshType>
+{
+
+public:
+    /// Computes unsteady residual in each cell to be used as an error estimate.
+    dealii::Vector<real> compute_cellwise_errors () override;
+
+    EntropyGenErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
+
+    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override;
+
+    /// Constructor
+    /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.
+     *  Also stores the current solution and distribution of polynomial orders
+     *  for the mesh for converting back to coarse state after refinement.
+    */
+
+    /// Destructor
+    ~EntropyGenErrorEstimate() {};
+    protected:
+        MPI_Comm mpi_communicator;
+        dealii::ConditionalOStream pcout; ///< Parallel std::cout that only outputs on mpi_rank==0
+
+};
+
+#if PHILIP_DIM==1
+template <int dim, int nstate, typename real, typename MeshType = dealii::Triangulation<dim>>
+#else
+template <int dim, int nstate, typename real, typename MeshType = dealii::parallel::distributed::Triangulation<dim>>
+#endif
+class FidkowskiErrorEstimate : public MeshErrorEstimateBase <dim, nstate, real, MeshType>
+{
+
+public:
+    /// Computes unsteady residual in each cell to be used as an error estimate.
+    dealii::Vector<real> compute_cellwise_errors () override;
+
+    FidkowskiErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
+
+    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override;
+
+    /// Constructor
+    /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.
+     *  Also stores the current solution and distribution of polynomial orders
+     *  for the mesh for converting back to coarse state after refinement.
+    */
+
+    /// Destructor
+    ~FidkowskiErrorEstimate() {};
     protected:
         MPI_Comm mpi_communicator;
         dealii::ConditionalOStream pcout; ///< Parallel std::cout that only outputs on mpi_rank==0
