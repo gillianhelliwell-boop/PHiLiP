@@ -9,10 +9,19 @@ std::unique_ptr <MeshErrorEstimateBase <dim, nstate, real, MeshType>> MeshErrorF
     {
         return std::make_unique<LESErrorEstimate<dim, nstate, real, MeshType>>(dg, mesh_adaptation_param);
     }
+    else if (!(dg->all_parameters->mesh_adaptation_param.use_goal_oriented_mesh_adaptation && dg->all_parameters->mesh_adaptation_param.use_entropy_gen_mesh_adaptation))
+    {
+        return std::make_unique<EntropyGenErrorEstimate<dim, nstate, real, MeshType>>(dg, mesh_adaptation_param);
+    }
+    else if (!(dg->all_parameters->mesh_adaptation_param.use_goal_oriented_mesh_adaptation && dg->all_parameters->mesh_adaptation_param.use_fidkowski_mesh_adaptation))
+    {
+        return std::make_unique<FidkowskiErrorEstimate<dim, nstate, real, MeshType>>(dg, mesh_adaptation_param);
+    }
     else if (!(dg->all_parameters->mesh_adaptation_param.use_goal_oriented_mesh_adaptation))
     {
         return std::make_unique<ResidualErrorEstimate<dim, nstate, real, MeshType>>(dg, mesh_adaptation_param);
     }
+    
 
     // Recursive templating required because template parameters must be compile time constants
     // As a results, this recursive template initializes all possible dimensions with all possible nstate
