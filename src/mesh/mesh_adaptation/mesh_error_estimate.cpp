@@ -29,6 +29,8 @@
 #include "post_processor/physics_post_processor.h"
 #include "physics/physics_factory.h"
 
+#include <tuple>
+
 namespace PHiLiP {
 
 //template <int dim, int nstate, typename real, typename MeshType>
@@ -51,10 +53,12 @@ ResidualErrorEstimate<dim, nstate, real, MeshType> :: ResidualErrorEstimate(std:
     {}
 
 template <int dim, int nstate, typename real, typename MeshType>
-dealii::Vector<real> ResidualErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
+std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> ResidualErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
     std::vector<dealii::types::global_dof_index> dofs_indices;
     dealii::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
+    dealii::Vector<real> first_residual(this->dg->triangulation->n_active_cells());
+    dealii::Vector<real> second_residual(this->dg->triangulation->n_active_cells());
     this->dg->assemble_residual();
 
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
@@ -77,7 +81,7 @@ dealii::Vector<real> ResidualErrorEstimate<dim, nstate, real, MeshType> :: compu
         cellwise_errors[cell->active_cell_index()] = max_residual;
     }
 
-    return cellwise_errors;
+    return {cellwise_errors, first_residual, second_residual};
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
@@ -89,7 +93,7 @@ FidkowskiErrorEstimate<dim, nstate, real, MeshType> :: FidkowskiErrorEstimate(st
 
 
 template <int dim, int nstate, typename real, typename MeshType>
-dealii::Vector<real> FidkowskiErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
+std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> FidkowskiErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
     //the goal here is to compute our variation of the fidkowski entropy adjoint error estimate.
     //the following steps are required: (1) save solution at p (2) project solution from p to p+1 using project_function
@@ -110,6 +114,8 @@ dealii::Vector<real> FidkowskiErrorEstimate<dim, nstate, real, MeshType> :: comp
     
     dealii::LinearAlgebra::distributed::Vector<double> original_solution = this->dg->solution;
     dealii::Vector<real> adjoint_residual(this->dg->triangulation->n_active_cells());
+    dealii::Vector<real> first_residual(this->dg->triangulation->n_active_cells());
+    dealii::Vector<real> second_residual(this->dg->triangulation->n_active_cells());
     std::vector<std::vector<real>> projected_solution(this->dg->triangulation->n_active_cells());
 
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
@@ -252,7 +258,7 @@ dealii::Vector<real> FidkowskiErrorEstimate<dim, nstate, real, MeshType> :: comp
         adjoint_residual[cell->active_cell_index()] = adjoint_residual_sum; }
     this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);
     pcout<<"computed adjoint residual"<<std::endl;
-    return adjoint_residual;
+    return {adjoint_residual, first_residual, second_residual};
 
 }
 
@@ -266,7 +272,7 @@ EntropyGenErrorEstimate<dim, nstate, real, MeshType> :: EntropyGenErrorEstimate(
 
 
 template <int dim, int nstate, typename real, typename MeshType>
-dealii::Vector<real> EntropyGenErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
+std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> EntropyGenErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
        // Declare physics pointer --> should probably initialize this in class constructor like dg pointer then pass it through
     std::shared_ptr<PHiLiP::Physics::NavierStokes<dim,nstate, real> > navier_stokes_physics;
@@ -288,6 +294,9 @@ dealii::Vector<real> EntropyGenErrorEstimate<dim, nstate, real, MeshType> :: com
     std::cout << "n_active_cells at adjoint_residual construction: " 
           << this->dg->triangulation->n_active_cells() << std::endl;
     dealii::Vector<real> adjoint_residual(this->dg->triangulation->n_active_cells());
+    dealii::Vector<real> first_residual(this->dg->triangulation->n_active_cells());
+    dealii::Vector<real> second_residual(this->dg->triangulation->n_active_cells());
+
     if constexpr (nstate == dim + 2)
     { 
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
@@ -339,7 +348,7 @@ dealii::Vector<real> EntropyGenErrorEstimate<dim, nstate, real, MeshType> :: com
         }
 
     }
-    return adjoint_residual;
+    return {adjoint_residual, first_residual, second_residual};
 }
 
 
@@ -352,8 +361,8 @@ LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_pt
 
 
 template <int dim, int nstate, typename real, typename MeshType>
-dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
-{
+//dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
+std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors() {
     //the below code computes the unsteady residual of value epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
     //auto Q_p = this->dg->solution; //save original solution
     //compute residual at p+1
@@ -410,6 +419,8 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::fine);
     this->dg->assemble_residual(); //assemble residual of projected mesh
     dealii::Vector<real> unsteady_residual(this->dg->triangulation->n_active_cells());
+    dealii::Vector<real> first_residual(this->dg->triangulation->n_active_cells());
+    dealii::Vector<real> second_residual(this->dg->triangulation->n_active_cells());
 
     
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
@@ -431,6 +442,8 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         cell->get_dof_indices(current_dofs_indices);
         // compute epsilon=(Res(P_{p+1}[Q_p])-P_{p+1}[Res(Q_p)])
         std::vector<real> residual_per_state_per_cell(nstate, 0.0);
+        std::vector<real> first_residual_per_state_per_cell(nstate, 0.0);
+        std::vector<real> second_residual_per_state_per_cell(nstate, 0.0);
 
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
@@ -438,9 +451,13 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
             std::pair<unsigned int, unsigned int> state_and_node = cell->get_fe().system_to_component_index(idof);
             //pcout<<"current state: "<<(state_and_node.first)<<"; current residual_per_state_per_cell: "<<residual_per_state_per_cell[state_and_node.first]<<std::endl;
             residual_per_state_per_cell[state_and_node.first] += std::abs(rhs_cell);
+            first_residual_per_state_per_cell[state_and_node.first] += std::abs(this->dg->right_hand_side[current_dofs_indices[idof]]);
+            second_residual_per_state_per_cell[state_and_node.first] += std::abs(projected_residual[cell->active_cell_index()][idof]);
         }
         
         //normalize the solution at each state
+        real total_first_residual_momentum = 0.0;
+        real total_second_residual_momentum = 0.0;
         real total_residual_momentum = 0.0;
         real dofs_momentum = 0;
         real sum_momentum = 0.0;
@@ -454,38 +471,64 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
         for (unsigned int state = 1; state < (nstate-1); ++state)
         {
             total_residual_momentum += residual_per_state_per_cell[state];
+            total_first_residual_momentum += first_residual_per_state_per_cell[state];
+            total_second_residual_momentum += second_residual_per_state_per_cell[state];
             dofs_momentum += dofs_per_state;
         } 
         real residual_mass = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
         real residual_energy = residual_per_state_per_cell[(nstate - 1)]*dofs_per_state/sum_per_state[(nstate - 1)];
+
+        //looking at results of each term
+        real first_residual_mass = first_residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
+        real first_residual_energy = first_residual_per_state_per_cell[(nstate - 1)]*dofs_per_state/sum_per_state[(nstate - 1)];
+        real second_residual_mass = second_residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
+        real second_residual_energy = second_residual_per_state_per_cell[(nstate - 1)]*dofs_per_state/sum_per_state[(nstate - 1)];
     
         //unsteady_residual[cell->active_cell_index()] = residual_mass + (total_residual_momentum*dofs_momentum/sum_momentum) + residual_energy;
         const auto state = this->mesh_adaptation_param->indicator_state;
         if (nstate > 1)
         {   
             if (state == Parameters::MeshAdaptationParam::x_momentum)
-                {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[1]*dofs_per_state/sum_per_state[1];}
+                {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[1]*dofs_per_state/sum_per_state[1];
+                first_residual[cell->active_cell_index()] = first_residual_per_state_per_cell[1]*dofs_per_state/sum_per_state[1];
+                second_residual[cell->active_cell_index()] = second_residual_per_state_per_cell[1]*dofs_per_state/sum_per_state[1];}
 
             else if (state == Parameters::MeshAdaptationParam::all)
-                {unsteady_residual[cell->active_cell_index()] = residual_mass + (total_residual_momentum*dofs_momentum/sum_momentum) + residual_energy;}
+                {unsteady_residual[cell->active_cell_index()] = residual_mass + (total_residual_momentum*dofs_momentum/sum_momentum) + residual_energy;
+                first_residual[cell->active_cell_index()] = first_residual_mass + (total_first_residual_momentum*dofs_momentum/sum_momentum) + first_residual_energy;
+                second_residual[cell->active_cell_index()] = second_residual_mass + (total_second_residual_momentum*dofs_momentum/sum_momentum) + second_residual_energy;}
             else if (state == Parameters::MeshAdaptationParam::energy)
-                {unsteady_residual[cell->active_cell_index()] = residual_energy;}
+                {unsteady_residual[cell->active_cell_index()] = residual_energy;
+                first_residual[cell->active_cell_index()] = first_residual_energy;
+                second_residual[cell->active_cell_index()] = second_residual_energy;}
             else if (state == Parameters::MeshAdaptationParam::mass)
-                {unsteady_residual[cell->active_cell_index()] = residual_mass;}
+                {unsteady_residual[cell->active_cell_index()] = residual_mass;
+                first_residual[cell->active_cell_index()] = first_residual_mass;
+                second_residual[cell->active_cell_index()] = second_residual_mass;}
             else if (state == Parameters::MeshAdaptationParam::y_momentum)
                 {if (nstate > 2)
-                    {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[2]*dofs_per_state/sum_per_state[2];}}
+                    {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[2]*dofs_per_state/sum_per_state[2];
+                    first_residual[cell->active_cell_index()] = first_residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
+                second_residual[cell->active_cell_index()] = second_residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];}}
             else if (state == Parameters::MeshAdaptationParam::x_y_momentum)
                 {if (nstate > 2)
-                    {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[1]*dofs_per_state/sum_per_state[1] + residual_per_state_per_cell[2]*dofs_per_state/sum_per_state[2];}}
+                    {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[1]*dofs_per_state/sum_per_state[1] + residual_per_state_per_cell[2]*dofs_per_state/sum_per_state[2];
+                    first_residual[cell->active_cell_index()] = first_residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
+                    second_residual[cell->active_cell_index()] = second_residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];}}
             else if (state == Parameters::MeshAdaptationParam::z_momentum)
                 {if (nstate > 3)
-                    {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[3];}}
+                    {unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[3];
+                    first_residual[cell->active_cell_index()] = first_residual_per_state_per_cell[3];
+                    second_residual[cell->active_cell_index()] = second_residual_per_state_per_cell[3];}}
             else if (state == Parameters::MeshAdaptationParam::momentum)
-                {unsteady_residual[cell->active_cell_index()] = total_residual_momentum*dofs_momentum/sum_momentum;}
+                {unsteady_residual[cell->active_cell_index()] = total_residual_momentum*dofs_momentum/sum_momentum;
+                first_residual[cell->active_cell_index()] = total_first_residual_momentum*dofs_momentum/sum_momentum;
+                second_residual[cell->active_cell_index()] = total_second_residual_momentum*dofs_momentum/sum_momentum;}
         }
         else {
             unsteady_residual[cell->active_cell_index()] = residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
+            first_residual[cell->active_cell_index()] = first_residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
+            second_residual[cell->active_cell_index()] = second_residual_per_state_per_cell[0]*dofs_per_state/sum_per_state[0];
         }
  
         //pcout<<"residual mass: "<<residual_mass<<"; residual momentum: "<<(total_residual_momentum*dofs_momentum/sum_momentum)<<"; residual energy: "<<residual_energy<<std::endl;
@@ -496,7 +539,7 @@ dealii::Vector<real> LESErrorEstimate<dim, nstate, real, MeshType> :: compute_ce
     this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);  // restore mesh TURNED OFF FOR TROUBLESHOOTING
 
     //this->dg->solution = Q_p; //restore solution vector 
-    return unsteady_residual;
+    return {unsteady_residual, first_residual, second_residual};
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
@@ -631,8 +674,7 @@ void MeshErrorEstimateBase<dim, nstate, real, MeshType>::fine_to_coarse()
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-void EntropyGenErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors)
-{
+void EntropyGenErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors, const dealii::Vector <real> &first_residual, const dealii::Vector <real> &second_residual) {
     dealii::DataOut<dim, dealii::DoFHandler<dim>> data_out;
     data_out.attach_dof_handler(this->dg->dof_handler);
 
@@ -652,6 +694,8 @@ void EntropyGenErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(co
     //dealii::Vector<real> error_estimate = compute_cellwise_errors();
     //cellwise_errors = meshadaptation->cellwise_errors;
     data_out.add_data_vector(cellwise_errors, "error_estimate", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(first_residual, "first_residual_term", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(second_residual, "second_residual_term", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
 
     // Output the polynomial degree in each cell
     std::vector<unsigned int> active_fe_indices;
@@ -722,7 +766,7 @@ void EntropyGenErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(co
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors)
+void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors, const dealii::Vector <real> &first_residual, const dealii::Vector <real> &second_residual)
 {
     dealii::DataOut<dim, dealii::DoFHandler<dim>> data_out;
     data_out.attach_dof_handler(this->dg->dof_handler);
@@ -743,6 +787,8 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const uns
     //dealii::Vector<real> error_estimate = compute_cellwise_errors();
     //cellwise_errors = meshadaptation->cellwise_errors;
     data_out.add_data_vector(cellwise_errors, "error_estimate", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(first_residual, "first_residual_term", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(second_residual, "second_residual_term", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
 
     // Output the polynomial degree in each cell
     std::vector<unsigned int> active_fe_indices;
@@ -813,7 +859,7 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const uns
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-void FidkowskiErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors)
+void FidkowskiErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors, const dealii::Vector <real> &first_residual, const dealii::Vector <real> &second_residual)
 {
     dealii::DataOut<dim, dealii::DoFHandler<dim>> data_out;
     data_out.attach_dof_handler(this->dg->dof_handler);
@@ -834,6 +880,8 @@ void FidkowskiErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(con
     //dealii::Vector<real> error_estimate = compute_cellwise_errors();
     //cellwise_errors = meshadaptation->cellwise_errors;
     data_out.add_data_vector(cellwise_errors, "error_estimate", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(first_residual, "first_residual_term", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(second_residual, "second_residual_term", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
 
     // Output the polynomial degree in each cell
     std::vector<unsigned int> active_fe_indices;
@@ -911,10 +959,12 @@ ExplicitErrorEstimate<dim, nstate, real, MeshType> :: ExplicitErrorEstimate(std:
 
 
 template <int dim, int nstate, typename real, typename MeshType>
-dealii::Vector<real> ExplicitErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
+std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> ExplicitErrorEstimate<dim, nstate, real, MeshType> :: compute_cellwise_errors()
 {
     std::vector<dealii::types::global_dof_index> dofs_indices;
     dealii::Vector<real> cellwise_errors (this->dg->high_order_grid->triangulation->n_active_cells());
+    dealii::Vector<real> first_residual (this->dg->high_order_grid->triangulation->n_active_cells());
+    dealii::Vector<real> second_residual (this->dg->high_order_grid->triangulation->n_active_cells());
     this->dg->assemble_residual();
 
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
@@ -928,7 +978,7 @@ dealii::Vector<real> ExplicitErrorEstimate<dim, nstate, real, MeshType> :: compu
         }
     }
 
-    return cellwise_errors;
+    return {cellwise_errors, first_residual, second_residual};
 }
 
 // constructor
@@ -961,13 +1011,14 @@ DualWeightedResidualError<dim, nstate, real, MeshType>::DualWeightedResidualErro
 template <int dim, int nstate, typename real, typename MeshType>
 real DualWeightedResidualError<dim, nstate, real, MeshType>::total_dual_weighted_residual_error()
 {
-    dealii::Vector<real> cellwise_errors = compute_cellwise_errors();
+    //dealii::Vector<real> cellwise_errors = compute_cellwise_errors();
+    auto [cellwise_errors, first_residual, second_residual] = compute_cellwise_errors();
     real error_sum = cellwise_errors.l1_norm();
     return dealii::Utilities::MPI::sum(error_sum, mpi_communicator);
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-dealii::Vector<real> DualWeightedResidualError<dim, nstate, real, MeshType>::compute_cellwise_errors()
+std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> DualWeightedResidualError<dim, nstate, real, MeshType>::compute_cellwise_errors()
 {
     using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
     dealii::Vector<real> cellwise_errors(this->dg->triangulation->n_active_cells());
@@ -978,9 +1029,10 @@ dealii::Vector<real> DualWeightedResidualError<dim, nstate, real, MeshType>::com
     pcout<<"Computing dual weighted residual..."<<std::endl;
     cellwise_errors = dual_weighted_residual();
     convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);
-
     pcout<<"Done computing the goal oriented error indicator."<<std::endl;
-    return cellwise_errors;
+    dealii::Vector<real> first_residual(this->dg->triangulation->n_active_cells());
+    dealii::Vector<real> second_residual(this->dg->triangulation->n_active_cells());
+    return {cellwise_errors, first_residual, second_residual};
 }
 
 

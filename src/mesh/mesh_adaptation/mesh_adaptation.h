@@ -62,6 +62,8 @@ public:
 
     /// Stores errors in each cell
     dealii::Vector<real> cellwise_errors;
+    dealii::Vector<real> first_residual;
+    dealii::Vector<real> second_residual;
 
 protected:
     

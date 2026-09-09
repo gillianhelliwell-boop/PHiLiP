@@ -422,7 +422,7 @@ void FlowSolver<dim,nstate>::perform_explicit_mesh_adaptation() const
     ode_solver->allocate_ode_system();
     pcout<<"Finished running mesh adaptation cycles."<<std::endl; 
     //meshadaptation->mesh_error->output_results_vtk(ode_solver->current_iteration, meshadaptation->get_cellwise_errors());
-    meshadaptation->mesh_error->output_results_vtk(ode_solver->current_iteration, meshadaptation->cellwise_errors);
+    meshadaptation->mesh_error->output_results_vtk(ode_solver->current_iteration, meshadaptation->cellwise_errors, meshadaptation->first_residual, meshadaptation->second_residual);
 }
 
 

@@ -65,10 +65,11 @@ public:
      */
 
      /// Computes the vector containing errors in each cell.
-    virtual dealii::Vector<real> compute_cellwise_errors () = 0;
+    //virtual dealii::Vector<real> compute_cellwise_errors () = 0;
+    virtual std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> compute_cellwise_errors() = 0;
 
     //outputs the results
-    virtual void output_results_vtk(const unsigned int /*cycle*/, const dealii::Vector<real> &/*cellwise_errors*/) {};
+    virtual void output_results_vtk(const unsigned int /*cycle*/, const dealii::Vector<real> &/*cellwise_errors*/, const dealii::Vector <real> &/*first_residual*/, const dealii::Vector <real> &/*second_residual*/) {};
    
     virtual void reinit();
 
@@ -120,7 +121,8 @@ class ResidualErrorEstimate : public MeshErrorEstimateBase <dim, nstate, real, M
 
 public:
     /// Computes maximum residual error in each cell.
-    dealii::Vector<real> compute_cellwise_errors () override;
+    //dealii::Vector<real> compute_cellwise_errors () override;
+    std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> compute_cellwise_errors() override;
 
     /// Constructor
     ResidualErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
@@ -141,7 +143,8 @@ class ExplicitErrorEstimate : public MeshErrorEstimateBase <dim, nstate, real, M
 
 public:
     /// Computes maximum residual error in each cell.
-    dealii::Vector<real> compute_cellwise_errors () override;
+    //dealii::Vector<real> compute_cellwise_errors () override;
+    std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> compute_cellwise_errors() override;
 
     /// Constructor
     ExplicitErrorEstimate(std::shared_ptr<DGBase<dim,real,MeshType>> dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
@@ -245,7 +248,8 @@ public:
     dealii::Vector<real> dual_weighted_residual();
 
     /// Computes dual weighted residual error in each cell, by integrating over all quadrature points. Overwrites the virtual function in MeshErrorEstimateBase.
-    dealii::Vector<real> compute_cellwise_errors () override;
+    //dealii::Vector<real> compute_cellwise_errors () override;
+    std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> compute_cellwise_errors() override;
 
     /// Computes the sum of dual weighted residual error over all the cells in the domain.
     real total_dual_weighted_residual_error();
@@ -255,8 +259,8 @@ public:
      *  related to the current adjoint state. Will also output DualWeightedResidualError::dual_weighted_residual_fine
      *  if currenly on the fine grid.
      */
-    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override {
-        MeshErrorEstimateBase<dim, nstate, real, MeshType>::output_results_vtk(cycle, cellwise_errors);
+    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors, const dealii::Vector <real> &first_residual, const dealii::Vector <real> &second_residual) override {
+        MeshErrorEstimateBase<dim, nstate, real, MeshType>::output_results_vtk(cycle, cellwise_errors, first_residual, second_residual);
     }
     void output_results_vtk(const unsigned int cycle);
 
@@ -302,11 +306,12 @@ class LESErrorEstimate : public MeshErrorEstimateBase <dim, nstate, real, MeshTy
 
 public:
     /// Computes unsteady residual in each cell to be used as an error estimate.
-    dealii::Vector<real> compute_cellwise_errors () override;
+    //dealii::Vector<real> compute_cellwise_errors () override;
+    std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> compute_cellwise_errors() override;
 
     LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
 
-    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override;
+    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors, const dealii::Vector <real> &first_residual, const dealii::Vector <real> &second_residual) override;
 
     /// Constructor
     /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.
@@ -332,11 +337,12 @@ class EntropyGenErrorEstimate : public MeshErrorEstimateBase <dim, nstate, real,
 
 public:
     /// Computes unsteady residual in each cell to be used as an error estimate.
-    dealii::Vector<real> compute_cellwise_errors () override;
+    //dealii::Vector<real> compute_cellwise_errors () override;
+    std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> compute_cellwise_errors() override;
 
     EntropyGenErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
 
-    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override;
+    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors, const dealii::Vector <real> &first_residual, const dealii::Vector <real> &second_residual) override;
 
     /// Constructor
     /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.
@@ -362,11 +368,12 @@ class FidkowskiErrorEstimate : public MeshErrorEstimateBase <dim, nstate, real, 
 
 public:
     /// Computes unsteady residual in each cell to be used as an error estimate.
-    dealii::Vector<real> compute_cellwise_errors () override;
+    //dealii::Vector<real> compute_cellwise_errors () override;
+    std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> compute_cellwise_errors() override;
 
     FidkowskiErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
 
-    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors) override;
+    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors, const dealii::Vector <real> &first_residual, const dealii::Vector <real> &second_residual) override;
 
     /// Constructor
     /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.

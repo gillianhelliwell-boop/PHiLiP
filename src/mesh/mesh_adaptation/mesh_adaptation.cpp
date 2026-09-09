@@ -23,7 +23,7 @@ void MeshAdaptation<dim, nstate, real,MeshType>::adapt_mesh()
     //save cellwise_errors as a member of MeshAdaptation
     //update_cellwise_errors();
     //cellwise_errors = get_cellwise_errors();
-    cellwise_errors = mesh_error->compute_cellwise_errors();
+    std::tie(this->cellwise_errors, this->first_residual, this->second_residual) = mesh_error->compute_cellwise_errors();
     //pcout<<"Called compute_cellwise_errors..."<<std::endl;
 
     [[maybe_unused]] unsigned int actual_size_of_cellwise_errors = cellwise_errors.size();
