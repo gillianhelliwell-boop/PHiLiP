@@ -112,7 +112,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
     
-    //dealii::LinearAlgebra::distributed::Vector<double> original_solution = this->dg->solution;
+    dealii::LinearAlgebra::distributed::Vector<double> original_solution = this->dg->solution;
     dealii::Vector<real> adjoint_residual(this->dg->triangulation->n_active_cells());
     dealii::Vector<real> first_residual(this->dg->triangulation->n_active_cells());
     dealii::Vector<real> second_residual(this->dg->triangulation->n_active_cells());
@@ -274,6 +274,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
         } 
         adjoint_residual[cell->active_cell_index()] = adjoint_residual_sum; }
     this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);
+    this->dg->solution = original_solution;
     pcout<<"computed adjoint residual"<<std::endl;
     return {adjoint_residual, first_residual, second_residual};
 
