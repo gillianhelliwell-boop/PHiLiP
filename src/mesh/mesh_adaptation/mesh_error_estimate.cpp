@@ -112,7 +112,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
     
-    dealii::LinearAlgebra::distributed::Vector<double> original_solution = this->dg->solution;
+    //dealii::LinearAlgebra::distributed::Vector<double> original_solution = this->dg->solution;
     dealii::Vector<real> adjoint_residual(this->dg->triangulation->n_active_cells());
     dealii::Vector<real> first_residual(this->dg->triangulation->n_active_cells());
     dealii::Vector<real> second_residual(this->dg->triangulation->n_active_cells());
@@ -146,17 +146,30 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
 
         projected_solution[cell->active_cell_index()] = project_function(p_order_solution, fe_input, fe_output, projection_quadrature); 
 
-        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
-        {
-            this->dg->solution[current_dofs_indices[idof]] = projected_solution[cell->active_cell_index()][idof];
-        }
         
     }
 
     //(3) project the mesh to p+1 and compute the entropy variables at p+1
     this -> reinit();
+
+    //set solution to projected solution on the fine grid
     using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
     this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::fine);
+
+    for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
+        {
+        if(!cell->is_locally_owned()) continue;
+        const unsigned int fe_index_curr_cell = cell->active_fe_index();
+        const dealii::FESystem<dim,dim> &current_fe_ref = this->dg->fe_collection[fe_index_curr_cell];
+        const unsigned int n_dofs_curr_cell = current_fe_ref.n_dofs_per_cell();
+        current_dofs_indices.resize(n_dofs_curr_cell);
+        cell->get_dof_indices(current_dofs_indices);
+
+        for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
+        {
+            this->dg->solution[current_dofs_indices[idof]] = projected_solution[cell->active_cell_index()][idof];
+        }
+        }
     this -> dg -> assemble_residual();
 
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
@@ -194,7 +207,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
                 rhs_coeff[istate].resize(n_shape_fns);
             }
             // solve
-            soln_coeff[istate][ishape] = original_solution[current_dofs_indices[idof]];
+            soln_coeff[istate][ishape] = this->dg->solution[current_dofs_indices[idof]];
             rhs_coeff[istate][ishape] = this->dg->right_hand_side(current_dofs_indices[idof]);
 
             //project onto quadrature points
