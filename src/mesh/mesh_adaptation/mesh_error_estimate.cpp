@@ -165,6 +165,10 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
         current_dofs_indices.resize(n_dofs_curr_cell);
         cell->get_dof_indices(current_dofs_indices);
 
+        if ((fe_index_curr_cell+1) == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation)
+        {   adjoint_residual[cell->active_cell_index()]= 0.0;
+            continue; }
+
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
             this->dg->solution[current_dofs_indices[idof]] = projected_solution[cell->active_cell_index()][idof];
