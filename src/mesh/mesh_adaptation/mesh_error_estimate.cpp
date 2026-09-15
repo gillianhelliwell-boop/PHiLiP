@@ -373,6 +373,8 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Ent
 template <int dim, int nstate, typename real, typename MeshType>
 LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
     : MeshErrorEstimateBase<dim, nstate, real, MeshType> (dg_input, mesh_adaptation_param_input)
+    //, flow_solver_case(flow_solver_case_input)
+    //, dg_default_mesh(dg_input)
     , mpi_communicator(MPI_COMM_WORLD)
     , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
     {}
@@ -390,6 +392,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
     //required variables to calculate P_{p+1}[Res(Q_p)]
     //std::vector<std::vector<real>> p_order_residual(this->dg->triangulation->n_active_cells());
     std::vector<std::vector<real>> projected_residual(this->dg->triangulation->n_active_cells());
+    std::vector<std::vector<real>> projected_solution(this->dg->triangulation->n_active_cells());
 
     //record average solution per state in each cell for normalization
     std::vector<real> sum_per_state(nstate, 0.0);
@@ -398,6 +401,22 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
     using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
+
+    //access solution at previous time step
+    dealii::LinearAlgebra::distributed::Vector<double> fine_previous_solution;
+    dealii::LinearAlgebra::distributed::Vector<double> previous_solution;
+    std::tie(fine_previous_solution, previous_solution) = this->save_temporal_derivatives();
+
+       //get time_step
+    [[maybe_unused]] double time_step = 0.0;
+    if(this->dg->all_parameters->flow_solver_param.constant_time_step > 0.0) {
+        time_step = this->dg->all_parameters->flow_solver_param.constant_time_step;}
+    else {
+        const unsigned int number_of_degrees_of_freedom_per_state = this->dg->dof_handler.n_dofs()/nstate;
+        const double approximate_grid_spacing = (this->dg->all_parameters->flow_solver_param.grid_right_bound - this->dg->all_parameters->flow_solver_param.grid_right_bound)/pow(number_of_degrees_of_freedom_per_state,(1.0/dim));
+        time_step = this->dg->all_parameters->flow_solver_param.courant_friedrichs_lewy_number * approximate_grid_spacing;
+    }
+
 
     // cell loop to project the residual to p+1 and obtain P_{p+1}[Res(Q_p)]
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
@@ -411,10 +430,12 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
         current_dofs_indices.resize(n_dofs_curr_cell);
         cell->get_dof_indices(current_dofs_indices);
         std::vector<real> p_order_residual(n_dofs_curr_cell);
+        std::vector<real> solution_per_cell(n_dofs_curr_cell);
        
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
             p_order_residual[idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
+            solution_per_cell[idof] = (this->dg->solution[current_dofs_indices[idof]] - previous_solution[current_dofs_indices[idof]])/time_step - this->dg->right_hand_side[current_dofs_indices[idof]];
             sum_per_state[(cell->get_fe().system_to_component_index(idof)).first] += std::abs(this->dg->solution[current_dofs_indices[idof]]); //calculate time average solution for normalization
         }
          
@@ -426,7 +447,8 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
         const dealii::QGauss <dim> projection_quadrature(fe_index_curr_cell + 2); //notation is +2 to account for Gauss 2n-1 rule
         //std::vector<real> p_order_residual_per_cell = p_order_residual[cell->active_cell_index()];
 
-        projected_residual[cell->active_cell_index()] = project_function(p_order_residual, fe_input, fe_output, projection_quadrature); 
+        projected_residual[cell->active_cell_index()] = project_function(p_order_residual, fe_input, fe_output, projection_quadrature);
+        projected_solution[cell->active_cell_index()] = project_function(solution_per_cell, fe_input, fe_output, projection_quadrature);  
         
     }    
     // add sum_per_state across all MPI ranks
@@ -465,12 +487,13 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
 
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
-            const real rhs_cell = this->dg->right_hand_side[current_dofs_indices[idof]] - projected_residual[cell->active_cell_index()][idof];
+            const real rhs_cell_fine = (this->dg->solution[current_dofs_indices[idof]] - fine_previous_solution[current_dofs_indices[idof]])/time_step - this->dg->right_hand_side[current_dofs_indices[idof]];
+            const real rhs_cell = rhs_cell_fine - projected_solution[cell->active_cell_index()][idof];
             std::pair<unsigned int, unsigned int> state_and_node = cell->get_fe().system_to_component_index(idof);
             //pcout<<"current state: "<<(state_and_node.first)<<"; current residual_per_state_per_cell: "<<residual_per_state_per_cell[state_and_node.first]<<std::endl;
             residual_per_state_per_cell[state_and_node.first] += std::abs(rhs_cell);
-            first_residual_per_state_per_cell[state_and_node.first] += std::abs(this->dg->right_hand_side[current_dofs_indices[idof]]);
-            second_residual_per_state_per_cell[state_and_node.first] += std::abs(projected_residual[cell->active_cell_index()][idof]);
+            first_residual_per_state_per_cell[state_and_node.first] += std::abs(rhs_cell_fine);
+            second_residual_per_state_per_cell[state_and_node.first] += std::abs(projected_solution[cell->active_cell_index()][idof]);
         }
         
         //normalize the solution at each state
@@ -553,11 +576,42 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
         //pcout<<"UNSTEADY RESIDUAL: "<<unsteady_residual[cell->active_cell_index()]<<std::endl;
     }
     
+    //below to be added to allow for adaptive time stepping
+    /*if(this->mesh_adaptation_param->adaptive_time_step == true) {
+            pcout << "Setting initial adaptive time step... " << std::flush;
+            //time_step = flow_solver_case->get_adaptive_time_step_initial(this->dg);
+            time_step = flow_solver_case->get_constant_time_step(this->dg); //added as a dummy for testing
+        } 
+    else {
+            pcout << "Setting constant time step... " << std::flush;
+            time_step = flow_solver_case->get_constant_time_step(this->dg);
+        } */
     
-    this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);  // restore mesh TURNED OFF FOR TROUBLESHOOTING
-
-    //this->dg->solution = Q_p; //restore solution vector 
+    this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);
+    //clear previous solutions to clean up space!!
+    
     return {unsteady_residual, first_residual, second_residual};
+}
+
+#include <utility> 
+
+template <int dim, int nstate, typename real, typename MeshType>
+std::pair<dealii::LinearAlgebra::distributed::Vector<double>, dealii::LinearAlgebra::distributed::Vector<double>> 
+LESErrorEstimate<dim, nstate, real, MeshType>::save_temporal_derivatives() 
+{
+    using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
+
+    dealii::LinearAlgebra::distributed::Vector<double> original_solution = this->dg->solution;
+
+    // Convert to fine space to get projected solution
+    this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::fine); 
+    dealii::LinearAlgebra::distributed::Vector<double> projected_solution = this->dg->solution;
+
+    // Restore back to original coarse state before returning
+    this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse); 
+
+    // Return both vectors wrapped in a pair
+    return {projected_solution, original_solution};
 }
 
 template <int dim, int nstate, typename real, typename MeshType>

@@ -20,6 +20,7 @@
 #include "functional/functional.h"
 #include "physics/physics.h"
 #include "physics/euler.h"
+#include "flow_solver/flow_solver_cases/flow_solver_case_base.h"
 
 namespace PHiLiP {
     
@@ -97,9 +98,11 @@ public:
      *  for the mesh for converting back to coarse state after refinement.
  */
 
-    /// Virtual Destructor
-    //virtual ~MeshErrorEstimateBase() = 0;
-
+    // Add virtual function to base interface with a default empty/fallback implementation
+    virtual std::pair<dealii::LinearAlgebra::distributed::Vector<double>, dealii::LinearAlgebra::distributed::Vector<double>> save_temporal_derivatives() 
+    {
+        return {}; // Default implementation for estimators that don't override it
+    }
 
     /// Destructor
     ~MeshErrorEstimateBase() {};
@@ -309,7 +312,14 @@ public:
     //dealii::Vector<real> compute_cellwise_errors () override;
     std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> compute_cellwise_errors() override;
 
+    std::pair<dealii::LinearAlgebra::distributed::Vector<double>, dealii::LinearAlgebra::distributed::Vector<double>> 
+    save_temporal_derivatives() override;
+
     LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
+
+    /// Pointer to Flow Solver Case
+    //std::shared_ptr<PHiLiP::FlowSolver::FlowSolverCaseBase<dim, nstate>> flow_solver_case;
+    //std::shared_ptr<DGBase<dim, real, MeshType>> dg_default_mesh;
 
     void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors, const dealii::Vector <real> &first_residual, const dealii::Vector <real> &second_residual) override;
 
