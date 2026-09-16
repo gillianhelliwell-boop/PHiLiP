@@ -417,7 +417,8 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
         time_step = this->dg->all_parameters->flow_solver_param.courant_friedrichs_lewy_number * approximate_grid_spacing;
     }
 
-
+    dealii::Vector<real> temporal_derivative(this->dg->triangulation->n_active_cells());
+    dealii::Vector<real> p_order_residual_per_cell(this->dg->triangulation->n_active_cells());
     // cell loop to project the residual to p+1 and obtain P_{p+1}[Res(Q_p)]
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
@@ -437,7 +438,11 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
             p_order_residual[idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
             solution_per_cell[idof] = (this->dg->solution[current_dofs_indices[idof]] - previous_solution[current_dofs_indices[idof]])/time_step - this->dg->right_hand_side[current_dofs_indices[idof]];
             sum_per_state[(cell->get_fe().system_to_component_index(idof)).first] += std::abs(this->dg->solution[current_dofs_indices[idof]]); //calculate time average solution for normalization
+            temporal_derivative[cell->active_cell_index()] += (this->dg->solution[current_dofs_indices[idof]] - previous_solution[current_dofs_indices[idof]])/time_step;
+            p_order_residual_per_cell[cell->active_cell_index()] += this->dg->right_hand_side[current_dofs_indices[idof]];
         }
+        temporal_derivative[cell->active_cell_index()] /= n_dofs_curr_cell;
+        p_order_residual_per_cell[cell->active_cell_index()] /= n_dofs_curr_cell;
          
         //gather inputs for project_function(), and then project the rhs of active cell to p+1
         const int poly_degree = cell->active_fe_index();
@@ -589,8 +594,9 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
     
     this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);
     //clear previous solutions to clean up space!!
-    
-    return {unsteady_residual, first_residual, second_residual};
+    fine_previous_solution = 0.0;
+    previous_solution = 0.0;
+    return {second_residual, temporal_derivative, p_order_residual_per_cell};
 }
 
 #include <utility> 
@@ -858,9 +864,9 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const uns
     //output error estimate
     //dealii::Vector<real> error_estimate = compute_cellwise_errors();
     //cellwise_errors = meshadaptation->cellwise_errors;
-    data_out.add_data_vector(cellwise_errors, "error_estimate", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
-    data_out.add_data_vector(first_residual, "first_residual_term", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
-    data_out.add_data_vector(second_residual, "second_residual_term", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(cellwise_errors, "second_residual_term", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(first_residual, "temporal_derivative", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(second_residual, "p_order_residual", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
 
     // Output the polynomial degree in each cell
     std::vector<unsigned int> active_fe_indices;
