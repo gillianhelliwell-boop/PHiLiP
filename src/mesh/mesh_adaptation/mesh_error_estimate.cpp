@@ -309,8 +309,8 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Ent
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
     
-    std::cout << "n_active_cells at adjoint_residual construction: " 
-          << this->dg->triangulation->n_active_cells() << std::endl;
+    //std::cout << "n_active_cells at adjoint_residual construction: " 
+    //      << this->dg->triangulation->n_active_cells() << std::endl;
     dealii::Vector<real> adjoint_residual(this->dg->triangulation->n_active_cells());
     dealii::Vector<real> first_residual(this->dg->triangulation->n_active_cells());
     dealii::Vector<real> second_residual(this->dg->triangulation->n_active_cells());
@@ -596,8 +596,8 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
     //clear previous solutions to clean up space!!
     fine_previous_solution = 0.0;
     previous_solution = 0.0;
-    //return {second_residual, temporal_derivative, p_order_residual_per_cell};
-    return {unsteady_residual, first_residual, second_residual};
+    return {temporal_derivative, p_order_residual_per_cell, second_residual};
+    //return {unsteady_residual, first_residual, second_residual};
 }
 
 #include <utility> 
@@ -865,8 +865,8 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const uns
     //output error estimate
     //dealii::Vector<real> error_estimate = compute_cellwise_errors();
     //cellwise_errors = meshadaptation->cellwise_errors;
-    data_out.add_data_vector(cellwise_errors, "cellwise_errors", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
-    data_out.add_data_vector(first_residual, "first_residual", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(cellwise_errors, "residual_at_p", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(first_residual, "temporal_derivative", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
     data_out.add_data_vector(second_residual, "second_residual", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
 
     // Output the polynomial degree in each cell
