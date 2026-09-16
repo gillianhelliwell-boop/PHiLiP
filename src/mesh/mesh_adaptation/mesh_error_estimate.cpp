@@ -596,7 +596,8 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
     //clear previous solutions to clean up space!!
     fine_previous_solution = 0.0;
     previous_solution = 0.0;
-    return {second_residual, temporal_derivative, p_order_residual_per_cell};
+    //return {second_residual, temporal_derivative, p_order_residual_per_cell};
+    return {unsteady_residual, first_residual, second_residual};
 }
 
 #include <utility> 
@@ -864,9 +865,9 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const uns
     //output error estimate
     //dealii::Vector<real> error_estimate = compute_cellwise_errors();
     //cellwise_errors = meshadaptation->cellwise_errors;
-    data_out.add_data_vector(cellwise_errors, "second_residual_term", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
-    data_out.add_data_vector(first_residual, "temporal_derivative", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
-    data_out.add_data_vector(second_residual, "p_order_residual", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(cellwise_errors, "cellwise_errors", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(first_residual, "first_residual", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(second_residual, "second_residual", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
 
     // Output the polynomial degree in each cell
     std::vector<unsigned int> active_fe_indices;
