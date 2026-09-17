@@ -422,7 +422,7 @@ void FlowSolver<dim,nstate>::perform_explicit_mesh_adaptation() const
     ode_solver->allocate_ode_system();
     pcout<<"Finished running mesh adaptation cycles."<<std::endl; 
     //meshadaptation->mesh_error->output_results_vtk(ode_solver->current_iteration, meshadaptation->get_cellwise_errors());
-    meshadaptation->mesh_error->output_results_vtk(ode_solver->current_iteration, meshadaptation->cellwise_errors, meshadaptation->first_residual, meshadaptation->second_residual);
+    meshadaptation->mesh_error->output_results_vtk(ode_solver->current_iteration, meshadaptation->residual_at_p, meshadaptation->temporal_derivative, meshadaptation->cellwise_errors);
 }
 
 
@@ -578,13 +578,15 @@ int FlowSolver<dim,nstate>::run() const
                 (ode_solver->current_iteration+1) % (this->all_param.mesh_adaptation_param.time_steps_between_adaptation_cycles) == 0 && 
                 ode_solver->current_iteration > 1 &&
                 this->all_param.mesh_adaptation_param.mesh_adaptation_end_time > ode_solver->current_time &&
-                ode_solver->current_time > this->all_param.mesh_adaptation_param.mesh_adaptation_start_time)
+                ode_solver->current_time > this->all_param.mesh_adaptation_param.mesh_adaptation_start_time &&
+                this->all_param.mesh_adaptation_param.use_LES_mesh_adaptation)
                 //SHOULD I ADD A CONDITION ABOUT use_LES_mesh_adaptation??
                 {
                 pcout << "\nCalculating temporal derivatives..." << std::endl;
                 std::unique_ptr<MeshAdaptation<dim,nstate,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,nstate,double>>(this->dg, &(this->all_param.mesh_adaptation_param));
                 meshadaptation->mesh_error->save_temporal_derivatives();
-                pcout << "Calculated temporal derivatives.\n" << std::endl;
+                //pcout << "Calculated temporal derivatives.\n" << std::endl;
+
             }
             //computes unsteady residual error estimate
             if(this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles > mesh_adaptation_cycles_completed && 

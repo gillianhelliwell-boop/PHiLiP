@@ -321,7 +321,7 @@ public:
     //std::shared_ptr<PHiLiP::FlowSolver::FlowSolverCaseBase<dim, nstate>> flow_solver_case;
     //std::shared_ptr<DGBase<dim, real, MeshType>> dg_default_mesh;
 
-    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &cellwise_errors, const dealii::Vector <real> &first_residual, const dealii::Vector <real> &second_residual) override;
+    void output_results_vtk(const unsigned int cycle, const dealii::Vector<real> &residual_at_p, const dealii::Vector <real> &temporal_derivative, const dealii::Vector <real> &cellwise_errors) override;
 
     /// Constructor
     /** Initializes the solution as being in the SolutionRefinementStateEnum::coarse state.

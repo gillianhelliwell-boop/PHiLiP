@@ -461,7 +461,9 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
 
     //Project mesh to p+1 to compute Res(P_{p+1}[Q_p])
     //reinit(); //do we need this?? maybe for residual vector. remove
+
     this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::fine);
+
     this->dg->assemble_residual(); //assemble residual of projected mesh
     dealii::Vector<real> unsteady_residual(this->dg->triangulation->n_active_cells());
     dealii::Vector<real> first_residual(this->dg->triangulation->n_active_cells());
@@ -591,8 +593,9 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
             pcout << "Setting constant time step... " << std::flush;
             time_step = flow_solver_case->get_constant_time_step(this->dg);
         } */
-    
+
     this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);
+
     //clear previous solutions to clean up space!!
     fine_previous_solution = 0.0;
     previous_solution = 0.0;
@@ -611,6 +614,7 @@ LESErrorEstimate<dim, nstate, real, MeshType>::save_temporal_derivatives()
     dealii::LinearAlgebra::distributed::Vector<double> original_solution = this->dg->solution;
 
     // Convert to fine space to get projected solution
+    this->reinit();
     this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::fine); 
     dealii::LinearAlgebra::distributed::Vector<double> projected_solution = this->dg->solution;
 
@@ -845,7 +849,7 @@ void EntropyGenErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(co
 }
 
 template <int dim, int nstate, typename real, typename MeshType>
-void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &cellwise_errors, const dealii::Vector <real> &first_residual, const dealii::Vector <real> &second_residual)
+void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const unsigned int cycle, const dealii::Vector <real> &residual_at_p, const dealii::Vector <real> &temporal_derivative, const dealii::Vector <real> &cellwise_errors)
 {
     dealii::DataOut<dim, dealii::DoFHandler<dim>> data_out;
     data_out.attach_dof_handler(this->dg->dof_handler);
@@ -865,9 +869,9 @@ void LESErrorEstimate<dim, nstate, real, MeshType>::output_results_vtk(const uns
     //output error estimate
     //dealii::Vector<real> error_estimate = compute_cellwise_errors();
     //cellwise_errors = meshadaptation->cellwise_errors;
-    data_out.add_data_vector(cellwise_errors, "residual_at_p", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
-    data_out.add_data_vector(first_residual, "temporal_derivative", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
-    data_out.add_data_vector(second_residual, "second_residual", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(residual_at_p, "residual_at_p", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(temporal_derivative, "temporal_derivative", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
+    data_out.add_data_vector(cellwise_errors, "cellwise_errors", dealii::DataOut_DoFData<dealii::DoFHandler<dim>,dim>::DataVectorType::type_cell_data);
 
     // Output the polynomial degree in each cell
     std::vector<unsigned int> active_fe_indices;

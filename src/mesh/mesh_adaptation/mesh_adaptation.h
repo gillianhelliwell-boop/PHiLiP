@@ -61,9 +61,9 @@ public:
     //}
 
     /// Stores errors in each cell
+    dealii::Vector<real> residual_at_p;
+    dealii::Vector<real> temporal_derivative;
     dealii::Vector<real> cellwise_errors;
-    dealii::Vector<real> first_residual;
-    dealii::Vector<real> second_residual;
 
 protected:
     
