@@ -371,10 +371,11 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Ent
 
 
 template <int dim, int nstate, typename real, typename MeshType>
-LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
+LESErrorEstimate<dim, nstate, real, MeshType> :: LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input, const PHiLiP::FlowSolver::FlowSolver<dim, nstate> *const flow_solver_input)
     : MeshErrorEstimateBase<dim, nstate, real, MeshType> (dg_input, mesh_adaptation_param_input)
     //, flow_solver_case(flow_solver_case_input)
     //, dg_default_mesh(dg_input)
+    , flow_solver_ptr(flow_solver_input)   
     , mpi_communicator(MPI_COMM_WORLD)
     , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(mpi_communicator)==0)
     {}
@@ -403,9 +404,8 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
     using Base = MeshErrorEstimateBase<dim, nstate, real, MeshType>;
 
     //access solution at previous time step
-    dealii::LinearAlgebra::distributed::Vector<double> fine_previous_solution;
-    dealii::LinearAlgebra::distributed::Vector<double> previous_solution;
-    std::tie(fine_previous_solution, previous_solution) = this->save_temporal_derivatives();
+    dealii::LinearAlgebra::distributed::Vector<double> fine_previous_solution = flow_solver_ptr->fine_previous_solution;
+    dealii::LinearAlgebra::distributed::Vector<double> previous_solution = flow_solver_ptr->previous_solution;
 
        //get time_step
     [[maybe_unused]] double time_step = 0.0;
@@ -413,7 +413,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
         time_step = this->dg->all_parameters->flow_solver_param.constant_time_step;}
     else {
         const unsigned int number_of_degrees_of_freedom_per_state = this->dg->dof_handler.n_dofs()/nstate;
-        const double approximate_grid_spacing = (this->dg->all_parameters->flow_solver_param.grid_right_bound - this->dg->all_parameters->flow_solver_param.grid_right_bound)/pow(number_of_degrees_of_freedom_per_state,(1.0/dim));
+        const double approximate_grid_spacing = (this->dg->all_parameters->flow_solver_param.grid_right_bound - this->dg->all_parameters->flow_solver_param.grid_left_bound)/pow(number_of_degrees_of_freedom_per_state,(1.0/dim));
         time_step = this->dg->all_parameters->flow_solver_param.courant_friedrichs_lewy_number * approximate_grid_spacing;
     }
 
@@ -432,14 +432,18 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
         cell->get_dof_indices(current_dofs_indices);
         std::vector<real> p_order_residual(n_dofs_curr_cell);
         std::vector<real> solution_per_cell(n_dofs_curr_cell);
+
+        //reset to zero
+        temporal_derivative[cell->active_cell_index()] = 0.0;
+        p_order_residual_per_cell[cell->active_cell_index()] = 0.0;
        
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
             p_order_residual[idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
             solution_per_cell[idof] = (this->dg->solution[current_dofs_indices[idof]] - previous_solution[current_dofs_indices[idof]])/time_step - this->dg->right_hand_side[current_dofs_indices[idof]];
             sum_per_state[(cell->get_fe().system_to_component_index(idof)).first] += std::abs(this->dg->solution[current_dofs_indices[idof]]); //calculate time average solution for normalization
-            temporal_derivative[cell->active_cell_index()] += (this->dg->solution[current_dofs_indices[idof]] - previous_solution[current_dofs_indices[idof]])/time_step;
-            p_order_residual_per_cell[cell->active_cell_index()] += this->dg->right_hand_side[current_dofs_indices[idof]];
+            temporal_derivative[cell->active_cell_index()] += std::abs((this->dg->solution[current_dofs_indices[idof]] - previous_solution[current_dofs_indices[idof]])/time_step);
+            p_order_residual_per_cell[cell->active_cell_index()] += std::abs(this->dg->right_hand_side[current_dofs_indices[idof]]);
         }
         temporal_derivative[cell->active_cell_index()] /= n_dofs_curr_cell;
         p_order_residual_per_cell[cell->active_cell_index()] /= n_dofs_curr_cell;

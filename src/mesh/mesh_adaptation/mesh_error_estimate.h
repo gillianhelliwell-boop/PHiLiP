@@ -20,7 +20,7 @@
 #include "functional/functional.h"
 #include "physics/physics.h"
 #include "physics/euler.h"
-#include "flow_solver/flow_solver_cases/flow_solver_case_base.h"
+#include "flow_solver/flow_solver.h"
 
 namespace PHiLiP {
     
@@ -315,7 +315,7 @@ public:
     std::pair<dealii::LinearAlgebra::distributed::Vector<double>, dealii::LinearAlgebra::distributed::Vector<double>> 
     save_temporal_derivatives() override;
 
-    LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
+    LESErrorEstimate(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input, const PHiLiP::FlowSolver::FlowSolver<dim, nstate> *const flow_solver_input);
 
     /// Pointer to Flow Solver Case
     //std::shared_ptr<PHiLiP::FlowSolver::FlowSolverCaseBase<dim, nstate>> flow_solver_case;
@@ -328,7 +328,7 @@ public:
      *  Also stores the current solution and distribution of polynomial orders
      *  for the mesh for converting back to coarse state after refinement.
     */
-
+    const PHiLiP::FlowSolver::FlowSolver<dim, nstate> *flow_solver_ptr;
     /// Destructor
     ~LESErrorEstimate() {};
     protected:

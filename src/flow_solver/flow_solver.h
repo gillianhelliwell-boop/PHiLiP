@@ -89,6 +89,9 @@ public:
 
     void perform_explicit_mesh_adaptation() const;
 
+    mutable dealii::LinearAlgebra::distributed::Vector<double> fine_previous_solution;
+    mutable dealii::LinearAlgebra::distributed::Vector<double> previous_solution;
+
 protected:
     const MPI_Comm mpi_communicator; ///< MPI communicator.
     const int mpi_rank; ///< MPI rank.

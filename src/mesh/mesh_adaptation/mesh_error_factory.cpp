@@ -3,11 +3,12 @@
 namespace PHiLiP {
 
 template <int dim, int nstate, typename real, typename MeshType>
-std::unique_ptr <MeshErrorEstimateBase <dim, nstate, real, MeshType>> MeshErrorFactory<dim, nstate, real, MeshType>::create_mesh_error(std::shared_ptr< DGBase<dim,real,MeshType>> dg, const Parameters::MeshAdaptationParam *const mesh_adaptation_param)
+std::unique_ptr <MeshErrorEstimateBase <dim, nstate, real, MeshType>> MeshErrorFactory<dim, nstate, real, MeshType>::create_mesh_error(std::shared_ptr< DGBase<dim,real,MeshType>> dg, const Parameters::MeshAdaptationParam *const mesh_adaptation_param
+, const PHiLiP::FlowSolver::FlowSolver<dim, nstate> *const flow_solver_input)
 {
     if (!(dg->all_parameters->mesh_adaptation_param.use_goal_oriented_mesh_adaptation) && dg->all_parameters->mesh_adaptation_param.use_LES_mesh_adaptation)
     {
-        return std::make_unique<LESErrorEstimate<dim, nstate, real, MeshType>>(dg, mesh_adaptation_param);
+        return std::make_unique<LESErrorEstimate<dim, nstate, real, MeshType>>(dg, mesh_adaptation_param, flow_solver_input);
     }
     else if (!(dg->all_parameters->mesh_adaptation_param.use_goal_oriented_mesh_adaptation) && dg->all_parameters->mesh_adaptation_param.use_entropy_gen_mesh_adaptation)
     {
@@ -36,7 +37,7 @@ std::unique_ptr <MeshErrorEstimateBase <dim, nstate, real, MeshType>> MeshErrorF
             return std::make_unique<DualWeightedResidualError<dim, nstate , real, MeshType>>(dg, mesh_adaptation_param);
         }
         else if constexpr (nstate > 1)
-            return MeshErrorFactory<dim, nstate, real, MeshType>::create_mesh_error(dg, mesh_adaptation_param);
+            return MeshErrorFactory<dim, nstate, real, MeshType>::create_mesh_error(dg, mesh_adaptation_param, flow_solver_input);
         else
             return nullptr;
     }

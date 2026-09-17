@@ -29,7 +29,7 @@ class MeshAdaptation
 public:
 
     /// Constructor to initialize the class with a pointer to DG.
-    MeshAdaptation(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input);
+    MeshAdaptation(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input, const PHiLiP::FlowSolver::FlowSolver<dim, nstate> *const flow_solver_input = nullptr);
 
     /// Destructor
     ~MeshAdaptation(){};
@@ -48,6 +48,8 @@ public:
 
     /// Holds parameters of mesh adaptation.
     const Parameters::MeshAdaptationParam *const mesh_adaptation_param;
+    /// Pointer to the FlowSolver instance.
+    const PHiLiP::FlowSolver::FlowSolver<dim, nstate> *const flow_solver;
 
     //Holds cellwise_errors (used for explicit mesh adaptation)
     // Call this only when the mesh or solution updates:

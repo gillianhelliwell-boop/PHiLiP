@@ -410,7 +410,7 @@ void FlowSolver<dim,nstate>::perform_steady_state_mesh_adaptation() const
 template <int dim, int nstate>
 void FlowSolver<dim,nstate>::perform_explicit_mesh_adaptation() const
 {
-    std::unique_ptr<MeshAdaptation<dim,nstate,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,nstate,double>>(this->dg, &(this->all_param.mesh_adaptation_param));
+    std::unique_ptr<MeshAdaptation<dim,nstate,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,nstate,double>>(this->dg, &(this->all_param.mesh_adaptation_param), this);
     //const int total_adaptation_cycles = this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles;
     
     pcout<<"Running mesh adaptation cycles..."<<std::endl;
@@ -583,8 +583,11 @@ int FlowSolver<dim,nstate>::run() const
                 //SHOULD I ADD A CONDITION ABOUT use_LES_mesh_adaptation??
                 {
                 pcout << "\nCalculating temporal derivatives..." << std::endl;
-                std::unique_ptr<MeshAdaptation<dim,nstate,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,nstate,double>>(this->dg, &(this->all_param.mesh_adaptation_param));
-                meshadaptation->mesh_error->save_temporal_derivatives();
+                std::unique_ptr<MeshAdaptation<dim,nstate,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,nstate,double>>(this->dg, &(this->all_param.mesh_adaptation_param), this);
+                
+                auto solution_pair = meshadaptation->mesh_error->save_temporal_derivatives();
+                this->fine_previous_solution = solution_pair.first;
+                this->previous_solution      = solution_pair.second;
                 //pcout << "Calculated temporal derivatives.\n" << std::endl;
 
             }

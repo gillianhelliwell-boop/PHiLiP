@@ -5,13 +5,14 @@
 namespace PHiLiP {
 
 template <int dim, int nstate, typename real, typename MeshType>
-MeshAdaptation<dim,nstate,real,MeshType>::MeshAdaptation(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input)
+MeshAdaptation<dim,nstate,real,MeshType>::MeshAdaptation(std::shared_ptr< DGBase<dim, real, MeshType> > dg_input, const Parameters::MeshAdaptationParam *const mesh_adaptation_param_input, const PHiLiP::FlowSolver::FlowSolver<dim, nstate> *const flow_solver_input)
     : dg(dg_input)
     , current_mesh_adaptation_cycle(0)
     , mesh_adaptation_param(mesh_adaptation_param_input)
+    , flow_solver(flow_solver_input)
     , pcout(std::cout, dealii::Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)==0)
     {
-        mesh_error = MeshErrorFactory<dim, nstate, real, MeshType> :: create_mesh_error(dg, mesh_adaptation_param);
+        mesh_error = MeshErrorFactory<dim, nstate, real, MeshType> :: create_mesh_error(dg, mesh_adaptation_param, flow_solver);
     }
 
 
