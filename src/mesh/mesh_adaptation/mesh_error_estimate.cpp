@@ -423,6 +423,8 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
 
     //multiply right hand side by inverse mass matrix
     dealii::LinearAlgebra::distributed::Vector<double> right_hand_side_inverse_mass(number_of_locally_owned_dofs);
+    //dealii::LinearAlgebra::distributed::Vector<double> right_hand_side_inverse_mass;
+    //right_hand_side_inverse_mass.reinit(this->dg->right_hand_side);
 
     //initialize size of vector to be the same as right_hand_side
     this->dg->apply_inverse_global_mass_matrix(this->dg->right_hand_side, right_hand_side_inverse_mass);
@@ -484,15 +486,16 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
 
      //multiply right hand side by inverse mass matrix
     dealii::LinearAlgebra::distributed::Vector<double> rhs_inverse_mass_fine(this->dg->dof_handler.locally_owned_dofs().size());
-
+    //dealii::LinearAlgebra::distributed::Vector<double> rhs_inverse_mass_fine;
+    //rhs_inverse_mass_fine.reinit(this->dg->right_hand_side);
     //initialize size of vector to be the same as right_hand_side
-    this->dg->apply_inverse_global_mass_matrix(this->dg->right_hand_side, right_hand_side_inverse_mass);
+    this->dg->apply_inverse_global_mass_matrix(this->dg->right_hand_side, rhs_inverse_mass_fine);
     
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
         if(!cell->is_locally_owned())  continue;
         const unsigned int fe_index_curr_cell = cell->active_fe_index();
-        if ((fe_index_curr_cell+1) == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation)
+        if ((fe_index_curr_cell) == this->dg->all_parameters->flow_solver_param.max_poly_degree_for_adaptation)
         {   unsteady_residual[cell->active_cell_index()]= 0.0;
             continue; }
         
