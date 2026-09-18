@@ -397,7 +397,8 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
 
     //record average solution per state in each cell for normalization
     std::vector<real> sum_per_state(nstate, 0.0);
-    int dofs_per_state = (this->dg->dof_handler.locally_owned_dofs().size() / nstate);
+    int number_of_locally_owned_dofs = this->dg->dof_handler.locally_owned_dofs().size();
+    int dofs_per_state = (number_of_locally_owned_dofs / nstate);
 
     const unsigned int max_dofs_per_cell = this->dg->dof_handler.get_fe_collection().max_dofs_per_cell();
     std::vector<dealii::types::global_dof_index> current_dofs_indices(max_dofs_per_cell);
@@ -419,6 +420,13 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
 
     dealii::Vector<real> temporal_derivative(this->dg->triangulation->n_active_cells());
     dealii::Vector<real> p_order_residual_per_cell(this->dg->triangulation->n_active_cells());
+
+    //multiply right hand side by inverse mass matrix
+    dealii::LinearAlgebra::distributed::Vector<double> right_hand_side_inverse_mass(number_of_locally_owned_dofs);
+
+    //initialize size of vector to be the same as right_hand_side
+    this->dg->apply_inverse_global_mass_matrix(this->dg->right_hand_side, right_hand_side_inverse_mass);
+
     // cell loop to project the residual to p+1 and obtain P_{p+1}[Res(Q_p)]
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
@@ -439,11 +447,12 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
        
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
-            p_order_residual[idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
+            //p_order_residual[idof] = this->dg->right_hand_side[current_dofs_indices[idof]];
+            p_order_residual[idof] = right_hand_side_inverse_mass[current_dofs_indices[idof]];
             solution_per_cell[idof] = (this->dg->solution[current_dofs_indices[idof]] - previous_solution[current_dofs_indices[idof]])/time_step - this->dg->right_hand_side[current_dofs_indices[idof]];
             sum_per_state[(cell->get_fe().system_to_component_index(idof)).first] += std::abs(this->dg->solution[current_dofs_indices[idof]]); //calculate time average solution for normalization
             temporal_derivative[cell->active_cell_index()] += std::abs((this->dg->solution[current_dofs_indices[idof]] - previous_solution[current_dofs_indices[idof]])/time_step);
-            p_order_residual_per_cell[cell->active_cell_index()] += std::abs(this->dg->right_hand_side[current_dofs_indices[idof]]);
+            p_order_residual_per_cell[cell->active_cell_index()] += std::abs(right_hand_side_inverse_mass[current_dofs_indices[idof]]);
         }
         temporal_derivative[cell->active_cell_index()] /= n_dofs_curr_cell;
         p_order_residual_per_cell[cell->active_cell_index()] /= n_dofs_curr_cell;
@@ -473,6 +482,11 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
     dealii::Vector<real> first_residual(this->dg->triangulation->n_active_cells());
     dealii::Vector<real> second_residual(this->dg->triangulation->n_active_cells());
 
+     //multiply right hand side by inverse mass matrix
+    dealii::LinearAlgebra::distributed::Vector<double> rhs_inverse_mass_fine(this->dg->dof_handler.locally_owned_dofs().size());
+
+    //initialize size of vector to be the same as right_hand_side
+    this->dg->apply_inverse_global_mass_matrix(this->dg->right_hand_side, right_hand_side_inverse_mass);
     
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators()) 
     {
@@ -498,7 +512,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
 
         for(unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof)
         {
-            const real rhs_cell_fine = (this->dg->solution[current_dofs_indices[idof]] - fine_previous_solution[current_dofs_indices[idof]])/time_step - this->dg->right_hand_side[current_dofs_indices[idof]];
+            const real rhs_cell_fine = (this->dg->solution[current_dofs_indices[idof]] - fine_previous_solution[current_dofs_indices[idof]])/time_step - rhs_inverse_mass_fine[current_dofs_indices[idof]];
             const real rhs_cell = rhs_cell_fine - projected_solution[cell->active_cell_index()][idof];
             std::pair<unsigned int, unsigned int> state_and_node = cell->get_fe().system_to_component_index(idof);
             //pcout<<"current state: "<<(state_and_node.first)<<"; current residual_per_state_per_cell: "<<residual_per_state_per_cell[state_and_node.first]<<std::endl;
@@ -603,7 +617,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> LES
     //clear previous solutions to clean up space!!
     fine_previous_solution = 0.0;
     previous_solution = 0.0;
-    return {temporal_derivative, p_order_residual_per_cell, second_residual};
+    return {p_order_residual_per_cell, temporal_derivative, second_residual};
     //return {unsteady_residual, first_residual, second_residual};
 }
 
