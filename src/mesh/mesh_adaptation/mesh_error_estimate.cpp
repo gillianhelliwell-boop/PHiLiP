@@ -175,6 +175,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
         }
         }
         //multiply right hand side by inverse mass matrix
+    int number_of_locally_owned_dofs = this->dg->dof_handler.locally_owned_dofs().size();
     dealii::LinearAlgebra::distributed::Vector<double> right_hand_side_inverse_mass(number_of_locally_owned_dofs);
     //dealii::LinearAlgebra::distributed::Vector<double> right_hand_side_inverse_mass;
     //right_hand_side_inverse_mass.reinit(this->dg->right_hand_side);
