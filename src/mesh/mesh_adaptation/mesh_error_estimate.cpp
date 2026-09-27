@@ -174,6 +174,13 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
             this->dg->solution[current_dofs_indices[idof]] = projected_solution[cell->active_cell_index()][idof];
         }
         }
+        //multiply right hand side by inverse mass matrix
+    dealii::LinearAlgebra::distributed::Vector<double> right_hand_side_inverse_mass(number_of_locally_owned_dofs);
+    //dealii::LinearAlgebra::distributed::Vector<double> right_hand_side_inverse_mass;
+    //right_hand_side_inverse_mass.reinit(this->dg->right_hand_side);
+
+    //initialize size of vector to be the same as right_hand_side
+    this->dg->apply_inverse_global_mass_matrix(this->dg->right_hand_side, right_hand_side_inverse_mass);
     this -> dg -> assemble_residual();
 
     for (const auto &cell : this->dg->dof_handler.active_cell_iterators())
