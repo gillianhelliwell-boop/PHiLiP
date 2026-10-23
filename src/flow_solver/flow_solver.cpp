@@ -574,23 +574,6 @@ int FlowSolver<dim,nstate>::run() const
             // advance solution
             ode_solver->step_in_time(time_step,false); // pseudotime==false
 
-            if(this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles > mesh_adaptation_cycles_completed && 
-                (ode_solver->current_iteration+1) % (this->all_param.mesh_adaptation_param.time_steps_between_adaptation_cycles) == 0 && 
-                ode_solver->current_iteration > 1 &&
-                this->all_param.mesh_adaptation_param.mesh_adaptation_end_time > ode_solver->current_time &&
-                ode_solver->current_time > this->all_param.mesh_adaptation_param.mesh_adaptation_start_time &&
-                this->all_param.mesh_adaptation_param.use_LES_mesh_adaptation)
-                //SHOULD I ADD A CONDITION ABOUT use_LES_mesh_adaptation??
-                {
-                pcout << "\nCalculating temporal derivatives..." << std::endl;
-                std::unique_ptr<MeshAdaptation<dim,nstate,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,nstate,double>>(this->dg, &(this->all_param.mesh_adaptation_param), this);
-                
-                auto solution_pair = meshadaptation->mesh_error->save_temporal_derivatives();
-                this->fine_previous_solution = solution_pair.first;
-                this->previous_solution      = solution_pair.second;
-                //pcout << "Calculated temporal derivatives.\n" << std::endl;
-
-            }
             //computes unsteady residual error estimate
             if(this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles > mesh_adaptation_cycles_completed && 
                 ode_solver->current_iteration % this->all_param.mesh_adaptation_param.time_steps_between_adaptation_cycles == 0 && 
@@ -611,6 +594,24 @@ int FlowSolver<dim,nstate>::run() const
                 if(flow_solver_param.do_compute_Reynolds_stress){
                     flow_solver_case->compute_Reynolds_stress(ode_solver, dg, time_step);
                 }
+            }
+
+            if(this->all_param.mesh_adaptation_param.total_mesh_adaptation_cycles > mesh_adaptation_cycles_completed && 
+                (ode_solver->current_iteration+1) % (this->all_param.mesh_adaptation_param.time_steps_between_adaptation_cycles) == 0 && 
+                ode_solver->current_iteration > 1 &&
+                this->all_param.mesh_adaptation_param.mesh_adaptation_end_time > ode_solver->current_time &&
+                ode_solver->current_time > this->all_param.mesh_adaptation_param.mesh_adaptation_start_time &&
+                this->all_param.mesh_adaptation_param.use_LES_mesh_adaptation)
+                //SHOULD I ADD A CONDITION ABOUT use_LES_mesh_adaptation??
+                {
+                pcout << "\nCalculating temporal derivatives..." << std::endl;
+                std::unique_ptr<MeshAdaptation<dim,nstate,double>> meshadaptation = std::make_unique<MeshAdaptation<dim,nstate,double>>(this->dg, &(this->all_param.mesh_adaptation_param), this);
+                
+                auto solution_pair = meshadaptation->mesh_error->save_temporal_derivatives();
+                this->fine_previous_solution = solution_pair.first;
+                this->previous_solution      = solution_pair.second;
+                //pcout << "Calculated temporal derivatives.\n" << std::endl;
+
             }
 
             bool do_write_unsteady_data_table_file = false;
