@@ -46,7 +46,7 @@ void MeshAdaptationParam::declare_parameters (dealii::ParameterHandler &prm)
         prm.declare_entry("mesh_adaptation_start_time","0.0",
                               dealii::Patterns::Double(0.0,1e5),
                               "Time at which to begin mesh adaptation.");
-        prm.declare_entry("mesh_adaptation_end_time","0.0",
+        prm.declare_entry("mesh_adaptation_end_time","30.0",
                               dealii::Patterns::Double(0.0,1e5),
                               "Time at which to end mesh adaptation.");
 
