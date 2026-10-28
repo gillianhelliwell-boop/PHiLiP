@@ -213,7 +213,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
         soln_basis.build_1D_volume_operator(this->dg->oneD_fe_collection_1state[fe_index_curr_cell], vol_quad_equidistant_1D);
         soln_basis.build_1D_gradient_operator(this->dg->oneD_fe_collection_1state[fe_index_curr_cell], vol_quad_equidistant_1D); 
         soln_basis_projection_oper.build_1D_volume_operator(this->dg->oneD_fe_collection_1state[fe_index_curr_cell], vol_quad_equidistant_1D);
-
+        [[maybe_unused]] real cell_density = 0.0;
         for (unsigned int idof = 0; idof < n_dofs_curr_cell; ++idof) {
             const unsigned int istate = (cell->get_fe().system_to_component_index(idof)).first;
             const unsigned int ishape = (cell->get_fe().system_to_component_index(idof)).second;
@@ -226,6 +226,9 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
             soln_coeff[istate][ishape] = this->dg->solution[current_dofs_indices[idof]];
             //rhs_coeff[istate][ishape] = right_hand_side_inverse_mass(current_dofs_indices[idof]);
             rhs_coeff[istate][ishape] = this->dg->right_hand_side(current_dofs_indices[idof]);
+            if (istate == 0) {
+                cell_density += soln_coeff[0][ishape];
+    }
             //project onto quadrature points
         }
 
@@ -258,7 +261,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
             entropy_var_at_q[iquad] = navier_stokes_physics->compute_entropy_variables(solution);
             cell_volume_estimate = cell_volume_estimate + JxW[iquad];
         }
-        const real cell_volume = cell_volume_estimate;
+        [[maybe_unused]] const real cell_volume = cell_volume_estimate;
         std::array<std::vector<real>,nstate> entropy_var_coeff;
         std::array<std::vector<real>,nstate> entropy_var_at_q_bystate;
         for (unsigned int istate=0; istate<nstate; ++istate) {
