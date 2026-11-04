@@ -388,7 +388,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Ent
         }
 
     }
-    return {adjoint_residual, first_residual, second_residual};
+    return {first_residual, second_residual, adjoint_residual};
 }
 
 
