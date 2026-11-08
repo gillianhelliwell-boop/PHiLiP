@@ -298,7 +298,7 @@ std::tuple<dealii::Vector<real>, dealii::Vector<real>, dealii::Vector<real>> Fid
     this->convert_dgsolution_to_coarse_or_fine(Base::SolutionRefinementStateEnum::coarse);
     this->dg->solution = original_solution;
     pcout<<"computed adjoint residual"<<std::endl;
-    return {adjoint_residual, first_residual, second_residual};
+    return {first_residual, second_residual, adjoint_residual};
 
 }
 
